@@ -1,0 +1,15 @@
+__pycache__
+.env
+.env.*
+logs
+mock.sh
+tmp
+.DS_Store
+.mypy_cache
+npm-store
+scripts/create_fragment.data.json
+
+.coverage
+.pytest_cache
+
+.sisyphus
