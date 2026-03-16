@@ -1,0 +1,453 @@
+name: Ace Review Worker
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        description: PR number to review
+        required: true
+        type: string
+      auto_loop:
+        description: Whether to auto-dispatch fix workflow after changes requested
+        required: false
+        type: string
+        default: "true"
+      extra_prompt:
+        description: Additional user instructions for the AI reviewer
+        required: false
+        type: string
+        default: ""
+      force:
+        description: Force reset PR state before review
+        required: false
+        type: string
+        default: "false"
+    secrets:
+      OPENCODE_AUTH_JSON_B64:
+        required: true
+      GH_PAT:
+        required: true
+    outputs:
+      needs_fix:
+        description: Whether a fix dispatch is needed (true/false)
+        value: ${{ jobs.review.outputs.needs_fix }}
+      fix_params:
+        description: JSON string with fix dispatch parameters
+        value: ${{ jobs.review.outputs.fix_params }}
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}/.coding-agent
+    outputs:
+      needs_fix: ${{ steps.set_outputs.outputs.needs_fix }}
+      fix_params: ${{ steps.set_outputs.outputs.fix_params }}
+    steps:
+      - name: Bootstrap AI worker
+        uses: ace0-uai/coding-agent/.github/actions/ai-worker-bootstrap@v1
+        with:
+          opencode-auth-b64: ${{ secrets.OPENCODE_AUTH_JSON_B64 }}
+      - name: Load error recovery config
+        id: load_error_config
+        uses: ./.coding-agent/.github/actions/load-error-config
+      - name: Fetch PR JSON and comments
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPO/pulls/$PR_NUMBER" > pr.json
+          gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate > pr_comments.json
+          gh api "repos/$REPO/issues/$PR_NUMBER/labels" > pr_labels_before_guard.json
+      - name: Force reset PR meta and labels
+        if: inputs.force == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.ci.extract_marker_comment --comments-file pr_comments.json --marker ai-pr-meta --field json > pr_meta_force_reset.json
+
+          python -m scripts.ci.update_pr_meta_json \
+            --meta-file pr_meta_force_reset.json \
+            --set active_operation=idle \
+            --set status=reviewing \
+            --set requested_head_sha="" \
+            --set last_reviewed_head_sha="" \
+            --set-int failure_count=0 \
+            --set-int fix_round=1 \
+            --set-json last_error=null \
+            --set-json lock_owner=null
+
+          python -m scripts.ci.build_pr_meta \
+            --mode update \
+            --input-file pr_meta_force_reset.json \
+            --active-operation idle \
+            --requested-head-sha "" \
+            --last-reviewed-head-sha "" \
+            --output pr_meta_comment.md
+
+          python -m scripts.ci.upsert_comment \
+            --comments-file pr_comments.json \
+            --marker ai-pr-meta \
+            --body-file pr_meta_comment.md \
+            --repo "$REPO" \
+            --issue-number "$PR_NUMBER"
+
+          gh pr edit "$PR_NUMBER" --repo "$REPO" \
+            --remove-label "ai:reviewing" \
+            --remove-label "ai:review-approved" \
+            --remove-label "ai:changes-requested" \
+            --remove-label "ai:loop-exceeded" \
+            --remove-label "ai:needs-human" || true
+
+          mv pr_meta_force_reset.json pr_meta.json
+      - name: Worker-level idempotency guard and lock
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          LOCK_OWNER: ${{ github.run_id }}-${{ github.run_attempt }}-review
+          FORCE_REVIEW: ${{ inputs.force }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$FORCE_REVIEW" != "true" || ! -f pr_meta.json ]]; then
+            marker_regex='^[[:space:]]*<!--[[:space:]]*ai-pr-meta[[:space:]]*-->[[:space:]]*$'
+            if jq -e --arg re "$marker_regex" 'map(.body // "") | any(test($re; "m"))' pr_comments.json > /dev/null; then
+              python -m scripts.ci.extract_marker_comment --comments-file pr_comments.json --marker ai-pr-meta --field json > pr_meta.json || echo '{}' > pr_meta.json
+            else
+              echo '{}' > pr_meta.json
+            fi
+          fi
+          if [[ ! -s pr_meta.json ]]; then echo '{}' > pr_meta.json; fi
+          cp pr_meta.json pr_meta_before_guard.json
+          if [[ ! -f pr_labels_before_guard.json ]]; then echo '[]' > pr_labels_before_guard.json; fi
+          pr_state="$(jq -r '.state' pr.json)"
+          head_sha="$(jq -r '.head.sha' pr.json)"
+          active_operation="$(jq -r '.active_operation // "idle"' pr_meta.json)"
+          last_reviewed_head_sha="$(jq -r '.last_reviewed_head_sha // ""' pr_meta.json)"
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+          if [[ "$pr_state" == "closed" ]]; then gh issue comment "$PR_NUMBER" --repo "$REPO" --body "PR is already closed. Skipping review worker."; echo "should_exit=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [[ "$active_operation" == "reviewing" ]]; then gh issue comment "$PR_NUMBER" --repo "$REPO" --body "AI review already in progress. Skipping duplicate review worker."; echo "should_exit=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [[ -n "$last_reviewed_head_sha" && "$last_reviewed_head_sha" == "$head_sha" ]]; then gh issue comment "$PR_NUMBER" --repo "$REPO" --body "Current HEAD was already reviewed. Skipping duplicate review worker."; echo "should_exit=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          cp pr_meta.json pr_meta_lock.json
+          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_lock.json --set lock_owner="$LOCK_OWNER"
+          python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_lock.json --active-operation reviewing --output pr_meta_comment.md
+          mv pr_meta_lock.json pr_meta.json
+          echo "should_exit=false" >> "$GITHUB_OUTPUT"
+      - name: Upsert guard lock meta comment
+        if: steps.guard.outputs.should_exit != 'true'
+        uses: ./.coding-agent/.github/actions/upsert-marker-comment
+        with:
+          marker: ai-pr-meta
+          body-file: pr_meta_comment.md
+          repo: ${{ github.repository }}
+          issue-number: ${{ inputs.pr_number }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Stop when guard requests exit
+        if: steps.guard.outputs.should_exit == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Worker exits due to idempotency guard."
+      - name: Mark reviewing labels
+        if: steps.guard.outputs.should_exit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "ai:review-approved" --remove-label "ai:changes-requested" --remove-label "ai:loop-exceeded" --add-label "ai:reviewing" || true
+      - name: Checkout PR head branch
+        if: steps.guard.outputs.should_exit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_REF="$(jq -r '.base.ref' pr.json)"
+          HEAD_REF="$(jq -r '.head.ref' pr.json)"
+          git fetch origin "$HEAD_REF" "$BASE_REF"
+          git checkout -B "$HEAD_REF" "origin/$HEAD_REF"
+      - name: Build review prompt
+        if: steps.guard.outputs.should_exit != 'true'
+        env:
+          REPO_NAME: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          EXTRA_PROMPT: ${{ inputs.extra_prompt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.ci.build_prompt --mode review --pr-file pr.json --pr-meta-file pr_meta.json --output review_prompt.md
+      - name: Run review agent
+        if: steps.guard.outputs.should_exit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.ci.run_opencode --prompt-file review_prompt.md --output-file review_result.json
+      - name: Parse review decision
+        if: steps.guard.outputs.should_exit != 'true'
+        id: review_outcome
+        shell: bash
+        run: |
+          set -euo pipefail
+          decision="$(jq -r '.decision' review_result.json)"
+          if [[ "$decision" != "APPROVED" && "$decision" != "CHANGES_REQUESTED" ]]; then
+            echo "Unexpected review decision: $decision"
+            exit 1
+          fi
+          echo "decision=$decision" >> "$GITHUB_OUTPUT"
+      - name: Build review summary
+        if: steps.guard.outputs.should_exit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.ci.build_review_summary --result-file review_result.json --output review_summary.md
+      - name: Upsert review context comment
+        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.ci.build_review_context --result-file review_result.json --output review_context_comment.md
+          gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate > pr_comments.json
+          python -m scripts.ci.upsert_comment --comments-file pr_comments.json --marker ai-review-context --body-file review_context_comment.md --repo "$REPO" --issue-number "$PR_NUMBER"
+      - name: Submit approval and finalize meta
+        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'APPROVED'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          HEAD_SHA: ${{ steps.guard.outputs.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr review "$PR_NUMBER" --repo "$REPO" --approve --body-file review_summary.md
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "ai:reviewing" --remove-label "ai:changes-requested" --remove-label "ai:loop-exceeded" --add-label "ai:review-approved" || true
+           cp pr_meta.json pr_meta_new.json
+          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=approved --set last_reviewed_head_sha="$HEAD_SHA" --set-int failure_count=0 --set-json last_error=null --set-json lock_owner=null --set-json auto_loop="$(jq '.auto_loop // true' pr_meta.json)"
+          python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
+      - name: Upsert approval meta comment
+        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'APPROVED'
+        uses: ./.coding-agent/.github/actions/upsert-marker-comment
+        with:
+          marker: ai-pr-meta
+          body-file: pr_meta_comment.md
+          repo: ${{ github.repository }}
+          issue-number: ${{ inputs.pr_number }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Submit changes requested
+        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr review "$PR_NUMBER" --repo "$REPO" --request-changes --body-file review_summary.md
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "ai:reviewing" --remove-label "ai:review-approved" --add-label "ai:changes-requested" || true
+      - name: Check loop round guard
+        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true'
+        id: round_guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_round="$(jq -r '.fix_round // 1' pr_meta.json)"
+          max_rounds="$(jq -r '.max_rounds // 3' pr_meta.json)"
+          if [[ "$current_round" -ge "$max_rounds" ]]; then echo "can_retry=false" >> "$GITHUB_OUTPUT"; else echo "can_retry=true" >> "$GITHUB_OUTPUT"; fi
+          echo "current_round=$current_round" >> "$GITHUB_OUTPUT"
+          echo "max_rounds=$max_rounds" >> "$GITHUB_OUTPUT"
+          echo "next_round=$((current_round + 1))" >> "$GITHUB_OUTPUT"
+      - name: Mark loop exceeded and finalize meta
+        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          HEAD_SHA: ${{ steps.guard.outputs.head_sha }}
+          MAX_ROUNDS: ${{ steps.round_guard.outputs.max_rounds }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "ai:loop-exceeded" || true
+          gh issue comment "$PR_NUMBER" --repo "$REPO" --body "Maximum fix rounds ($MAX_ROUNDS) reached. Please review manually."
+           cp pr_meta.json pr_meta_new.json
+          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=loop-exceeded --set last_reviewed_head_sha="$HEAD_SHA" --set-json lock_owner=null --set-json auto_loop="$(jq '.auto_loop // true' pr_meta.json)"
+          python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
+      - name: Upsert loop exceeded meta comment
+        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry != 'true'
+        uses: ./.coding-agent/.github/actions/upsert-marker-comment
+        with:
+          marker: ai-pr-meta
+          body-file: pr_meta_comment.md
+          repo: ${{ github.repository }}
+          issue-number: ${{ inputs.pr_number }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Check failure count before dispatch
+        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry == 'true'
+        id: failure_guard
+        uses: ./.coding-agent/.github/actions/check-failure-count
+        with:
+          meta-file: pr_meta.json
+          max-failures: ${{ steps.load_error_config.outputs.max_failures }}
+          auto-label: ${{ steps.load_error_config.outputs.auto_label }}
+          pr-number: ${{ inputs.pr_number }}
+          repo: ${{ github.repository }}
+          gh-token: ${{ github.token }}
+          comment-body: Maximum consecutive failures (${{ steps.load_error_config.outputs.max_failures }}) reached. Skipping ai-fix dispatch. Please review manually.
+      - name: Update meta and dispatch ai-fix workflow
+        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          HEAD_SHA: ${{ steps.guard.outputs.head_sha }}
+          NEXT_ROUND: ${{ steps.round_guard.outputs.next_round }}
+        shell: bash
+        run: |
+          set -euo pipefail
+           cp pr_meta.json pr_meta_new.json
+          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=fix_requested --set last_reviewed_head_sha="$HEAD_SHA" --set-int fix_round="$NEXT_ROUND" --set-json lock_owner=null --set-json auto_loop="$(jq '.auto_loop // true' pr_meta.json)"
+          python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
+      - name: Upsert fix-requested meta comment
+        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
+        uses: ./.coding-agent/.github/actions/upsert-marker-comment
+        with:
+          marker: ai-pr-meta
+          body-file: pr_meta_comment.md
+          repo: ${{ github.repository }}
+          issue-number: ${{ inputs.pr_number }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Set fix dispatch outputs
+        id: set_outputs
+        if: always()
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          should_exit="${{ steps.guard.outputs.should_exit }}"
+          decision="${{ steps.review_outcome.outputs.decision }}"
+          auto_loop="${{ inputs.auto_loop }}"
+          can_retry="${{ steps.round_guard.outputs.can_retry }}"
+          can_proceed="${{ steps.failure_guard.outputs.can_proceed }}"
+
+          if [[ "$should_exit" != "true" && "$decision" == "CHANGES_REQUESTED" && "$auto_loop" == "true" && "$can_retry" == "true" && "$can_proceed" == "true" ]]; then
+            echo "needs_fix=true" >> "$GITHUB_OUTPUT"
+            echo "fix_params={\"target_type\":\"pr\",\"target_number\":\"$PR_NUMBER\",\"auto_loop\":\"true\",\"extra_prompt\":\"\"}" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_fix=false" >> "$GITHUB_OUTPUT"
+            echo "fix_params={}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Dispatch ai-fix workflow
+        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run ai-fix.yml --ref "${{ github.event.repository.default_branch }}" -f target_type=pr -f target_number="$PR_NUMBER" -f auto_loop=true -f extra_prompt=""
+      - name: Manual mode finalize meta only
+        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          HEAD_SHA: ${{ steps.guard.outputs.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+           cp pr_meta.json pr_meta_new.json
+          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=changes-requested --set last_reviewed_head_sha="$HEAD_SHA" --set-json lock_owner=null --set-json auto_loop="$(jq '.auto_loop // true' pr_meta.json)"
+          python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
+      - name: Upsert manual mode meta comment
+        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop != 'true'
+        uses: ./.coding-agent/.github/actions/upsert-marker-comment
+        with:
+          marker: ai-pr-meta
+          body-file: pr_meta_comment.md
+          repo: ${{ github.repository }}
+          issue-number: ${{ inputs.pr_number }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Failure or cancellation rollback to entry state
+        if: always() && steps.guard.outputs.should_exit != 'true' && (failure() || cancelled())
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          LOCK_OWNER: ${{ github.run_id }}-${{ github.run_attempt }}-review
+        shell: bash
+        run: |
+          set +e
+          if [[ ! -f pr_meta_before_guard.json ]]; then
+            echo '{}' > pr_meta_before_guard.json
+          fi
+          if [[ ! -f pr_labels_before_guard.json ]]; then
+            echo '[]' > pr_labels_before_guard.json
+          fi
+
+          gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate > pr_comments_rollback.json || true
+          python -m scripts.ci.extract_marker_comment --comments-file pr_comments_rollback.json --marker ai-pr-meta --field json > pr_meta_current_for_rollback.json || echo '{}' > pr_meta_current_for_rollback.json
+          current_lock_owner="$(jq -r '.lock_owner // ""' pr_meta_current_for_rollback.json)"
+          if [[ "$current_lock_owner" != "$LOCK_OWNER" ]]; then
+            echo "Skip rollback because lock owner changed: current=$current_lock_owner expected=$LOCK_OWNER"
+            exit 0
+          fi
+
+          current_failure_count="$(jq -r '.failure_count // 0' pr_meta_current_for_rollback.json 2>/dev/null || echo 0)"
+          new_failure_count=$((current_failure_count + 1))
+
+          python -m scripts.ci.build_pr_meta \
+            --mode update \
+            --input-file pr_meta_before_guard.json \
+            --output pr_meta_comment.md || true
+
+          cp pr_meta_before_guard.json pr_meta_rollback_with_failure.json || echo '{}' > pr_meta_rollback_with_failure.json
+          python -m scripts.ci.update_pr_meta_json \
+            --meta-file pr_meta_rollback_with_failure.json \
+            --set-int failure_count="$new_failure_count" \
+            --set last_error="Review agent failed during execution" \
+            --set-json lock_owner=null || true
+          python -m scripts.ci.build_pr_meta \
+            --mode update \
+            --input-file pr_meta_rollback_with_failure.json \
+            --output pr_meta_comment.md || true
+
+          max_failures="${{ steps.load_error_config.outputs.max_failures }}"
+          auto_label="${{ steps.load_error_config.outputs.auto_label }}"
+          if [[ "$new_failure_count" -ge "$max_failures" && "$auto_label" == "true" ]]; then
+            gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "ai:needs-human" || true
+          fi
+
+          python -m scripts.ci.upsert_comment \
+            --comments-file pr_comments_rollback.json \
+            --marker ai-pr-meta \
+            --body-file pr_meta_comment.md \
+            --repo "$REPO" \
+            --issue-number "$PR_NUMBER" || true
+
+          labels=("ai:reviewing" "ai:review-approved" "ai:changes-requested" "ai:loop-exceeded")
+          for label in "${labels[@]}"; do
+            should_have="$(jq -r --arg label "$label" 'map(.name) | index($label) != null' pr_labels_before_guard.json 2>/dev/null || echo false)"
+            if [[ "$should_have" == "true" ]]; then
+              gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "$label" || true
+            else
+              gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "$label" || true
+            fi
+          done
