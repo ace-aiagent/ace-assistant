@@ -1,0 +1,530 @@
+name: AI Fix
+on:
+  workflow_call:
+    inputs:
+      target_type:
+        description: 'Target type: issue or pr'
+        required: true
+        type: string
+      target_number:
+        description: 'Issue or PR number'
+        required: true
+        type: string
+      auto_loop:
+        description: 'Whether to auto dispatch ai-review after fix'
+        required: false
+        type: string
+        default: "true"
+      extra_prompt:
+        description: 'Additional user instructions for AI fix agent'
+        required: false
+        type: string
+        default: ""
+      triage_json:
+        description: 'Optional triage JSON for issue path'
+        required: false
+        type: string
+        default: ""
+      force:
+        description: 'Force reset state before running'
+        required: false
+        type: string
+        default: "false"
+    secrets:
+      OPENCODE_AUTH_JSON_B64:
+        required: true
+      GH_PAT:
+        required: true
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}/.coding-agent
+    steps:
+      - name: Bootstrap AI worker
+        uses: ace0-uai/coding-agent/.github/actions/ai-worker-bootstrap@v1
+        with:
+          opencode-auth-b64: ${{ secrets.OPENCODE_AUTH_JSON_B64 }}
+      - name: Fetch issue JSON
+        if: inputs.target_type == 'issue'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ inputs.target_number }}
+        shell: bash
+        run: |
+          set -euo pipefail; gh api "repos/$REPO/issues/$ISSUE_NUMBER" > issue.json
+      - name: Parse issue form
+        if: inputs.target_type == 'issue'
+        shell: bash
+        run: |
+          set -euo pipefail; python -m scripts.ci.parse_issue_form --issue-file issue.json --output issue_fields.json
+      - name: Validate base branch
+        if: inputs.target_type == 'issue'
+        id: validate_issue_branch
+        shell: bash
+        run: |
+          set -euo pipefail; BASE_BRANCH="$(jq -r '.base_branch // empty' issue_fields.json)"; if [[ -z "$BASE_BRANCH" ]]; then echo "valid=false" >> "$GITHUB_OUTPUT"; exit 0; fi; git fetch origin "$BASE_BRANCH" || true; if git show-ref --verify --quiet "refs/remotes/origin/$BASE_BRANCH"; then echo "valid=true" >> "$GITHUB_OUTPUT"; echo "base_branch=$BASE_BRANCH" >> "$GITHUB_OUTPUT"; else echo "valid=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Comment if base branch is invalid
+        if: inputs.target_type == 'issue' && steps.validate_issue_branch.outputs.valid != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ inputs.target_number }}
+        shell: bash
+        run: |
+          set -euo pipefail; gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label "ai:needs-human" || true; printf '⚠️ **Ace Cannot Continue**\n\nThe `Base branch` specified in the issue does not exist. Please correct it and comment `/ace fix`.\n' > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+      - name: Mark issue as triaging
+        if: inputs.target_type == 'issue' && steps.validate_issue_branch.outputs.valid == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ inputs.target_number }}
+        shell: bash
+        run: |
+          set -euo pipefail; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ai:not-a-bug"             --remove-label "ai:confirmed"             --remove-label "ai:needs-human"             --add-label "ai:triaging" || true
+      - name: Use provided triage JSON
+        if: inputs.target_type == 'issue' && steps.validate_issue_branch.outputs.valid == 'true' && inputs.triage_json != ''
+        shell: bash
+        env:
+          TRIAGE_JSON: ${{ inputs.triage_json }}
+        run: |
+          set -euo pipefail; printf '%s' "$TRIAGE_JSON" | jq '.' > triage_result.json
+      - name: Build triage prompt
+        if: inputs.target_type == 'issue' && steps.validate_issue_branch.outputs.valid == 'true' && inputs.triage_json == ''
+        env:
+          ISSUE_NUMBER: ${{ inputs.target_number }}
+          BASE_BRANCH: ${{ steps.validate_issue_branch.outputs.base_branch }}
+          REPO_NAME: ${{ github.repository }}
+          EXTRA_PROMPT: ${{ inputs.extra_prompt }}
+        shell: bash
+        run: |
+          set -euo pipefail; python -m scripts.ci.build_prompt             --mode triage             --issue-file issue.json             --fields-file issue_fields.json             --output triage_prompt.md
+      - name: Run triage agent
+        if: inputs.target_type == 'issue' && steps.validate_issue_branch.outputs.valid == 'true' && inputs.triage_json == ''
+        shell: bash
+        run: |
+          set -euo pipefail; python -m scripts.ci.run_opencode             --prompt-file triage_prompt.md             --output-file triage_result.json
+      - name: Prepare triage outputs
+        if: inputs.target_type == 'issue' && steps.validate_issue_branch.outputs.valid == 'true'
+        id: triage_out
+        shell: bash
+        run: |
+          set -euo pipefail; echo "verdict=$(jq -r '.verdict // ""' triage_result.json)" >> "$GITHUB_OUTPUT"
+      - name: Comment and stop for NOT_A_BUG
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'NOT_A_BUG'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ inputs.target_number }}
+        shell: bash
+        run: |
+          set -euo pipefail; reason="$(jq -r '.reason // "N/A"' triage_result.json)"; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ai:triaging"             --add-label "ai:not-a-bug" || true; printf '🔍 **Ace Triage Result: NOT_A_BUG**\n\n**Reason:** %s\n' "$reason" > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+      - name: Comment and stop for NEEDS_HUMAN
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'NEEDS_HUMAN'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ inputs.target_number }}
+        shell: bash
+        run: |
+          set -euo pipefail; reason="$(jq -r '.reason // "N/A"' triage_result.json)"; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ai:triaging"             --add-label "ai:needs-human" || true; printf '🤔 **Ace Triage Result: NEEDS_HUMAN**\n\n**Reason:** %s\n' "$reason" > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+      - name: Comment and mark issue as confirmed
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ inputs.target_number }}
+        shell: bash
+        run: |
+          set -euo pipefail; reason="$(jq -r '.reason // "N/A"' triage_result.json)"; confidence="$(jq -r '.confidence // "N/A"' triage_result.json)"; fix_strategy="$(jq -r '.fix_strategy // "N/A"' triage_result.json)"; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ai:triaging"             --remove-label "ai:not-a-bug"             --remove-label "ai:needs-human"             --add-label "ai:confirmed"             --add-label "ai:fixing" || true; printf '✅ **Ace Triage Result: CONFIRMED_BUG**\n\n- **Confidence:** %s\n- **Reason:** %s\n- **Fix Strategy:** %s\n\nProceeding with automatic fix...\n' "$confidence" "$reason" "$fix_strategy" > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+      - name: Build issue fix branch name
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG'
+        id: issue_branch_name
+        shell: bash
+        run: |
+          set -euo pipefail; python -m scripts.ci.build_branch_name             --issue-file issue.json             --triage-file triage_result.json >> "$GITHUB_OUTPUT"
+      - name: Create issue fix branch
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG'
+        env:
+          BASE_BRANCH: ${{ steps.validate_issue_branch.outputs.base_branch }}
+          FIX_BRANCH: ${{ steps.issue_branch_name.outputs.fix_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail; git fetch origin "$BASE_BRANCH"; git checkout -B "$FIX_BRANCH" "origin/$BASE_BRANCH"
+      - name: Build issue fix prompt
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG'
+        env:
+          REPO_NAME: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ inputs.target_number }}
+          BASE_BRANCH: ${{ steps.validate_issue_branch.outputs.base_branch }}
+          FIX_BRANCH: ${{ steps.issue_branch_name.outputs.fix_branch }}
+          EXTRA_PROMPT: ${{ inputs.extra_prompt }}
+        shell: bash
+        run: |
+          set -euo pipefail; python -m scripts.ci.build_prompt             --mode fix             --issue-file issue.json             --fields-file issue_fields.json             --triage-file triage_result.json             --output fix_prompt.md
+      - name: Run issue fix agent
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG'
+        shell: bash
+        run: |
+          set -euo pipefail; python -m scripts.ci.run_opencode             --prompt-file fix_prompt.md             --output-file fix_result.json
+      - name: Check whether issue fix changed code
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG'
+        id: issue_diff_check
+        shell: bash
+        run: |
+          set -euo pipefail; if git diff --quiet && git diff --cached --quiet; then echo "has_changes=false" >> "$GITHUB_OUTPUT"; else echo "has_changes=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Comment and stop if no issue fix changes
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG' && steps.issue_diff_check.outputs.has_changes != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ inputs.target_number }}
+        shell: bash
+        run: |
+          set -euo pipefail; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ai:fixing"             --add-label "ai:needs-human" || true; printf '⚠️ **Ace Fix — No Code Changes**\n\nAce confirmed this is a bug, but no committable code changes were produced this round. Please review manually.\n' > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+      - name: Build issue commit message
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG' && steps.issue_diff_check.outputs.has_changes == 'true'
+        env:
+          ISSUE_NUMBER: ${{ inputs.target_number }}
+          BASE_BRANCH: ${{ steps.validate_issue_branch.outputs.base_branch }}
+          FIX_BRANCH: ${{ steps.issue_branch_name.outputs.fix_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail; python -m scripts.ci.build_commit_msg             --mode initial             --result-file fix_result.json             --output commit_message.txt
+      - name: Commit and push issue fix
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG' && steps.issue_diff_check.outputs.has_changes == 'true'
+        uses: ./.coding-agent/.github/actions/git-commit-push
+        with:
+          commit-message-file: commit_message.txt
+          preserve-files: "commit_message.txt issue.json fix_result.json"
+          cleanup-files: "issue.json issue_fields.json triage_prompt.md triage_result.json triage_result.raw.txt fix_prompt.md fix_result.json fix_result.raw.txt commit_message.txt pr_title.txt pr_body.md pr_meta_comment.md pr_comments.json"
+          branch: ${{ steps.issue_branch_name.outputs.fix_branch }}
+      - name: Create or update issue PR
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG' && steps.issue_diff_check.outputs.has_changes == 'true'
+        id: create_issue_pr
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ inputs.target_number }}
+          BASE_BRANCH: ${{ steps.validate_issue_branch.outputs.base_branch }}
+          FIX_BRANCH: ${{ steps.issue_branch_name.outputs.fix_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail; existing_pr="$(gh pr list --repo "$REPO" --head "$FIX_BRANCH" --state open --json number,url --jq '.[0]')"; if [[ -n "$existing_pr" && "$existing_pr" != "null" ]]; then pr_number="$(jq -r '.number' <<<"$existing_pr")"; pr_url="$(jq -r '.url' <<<"$existing_pr")"; else python -m scripts.ci.build_pr_content               --issue-file issue.json               --result-file fix_result.json               --title-output pr_title.txt               --body-output pr_body.md; pr_url="$(gh pr create               --repo "$REPO"               --base "$BASE_BRANCH"               --head "$FIX_BRANCH"               --title "$(cat pr_title.txt)"               --body-file pr_body.md)"; pr_number="$(basename "$pr_url")"; fi; echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"; echo "pr_url=$pr_url" >> "$GITHUB_OUTPUT"
+      - name: Add issue PR labels
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG' && steps.issue_diff_check.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.create_issue_pr.outputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail; gh pr edit "$PR_NUMBER" --repo "$REPO"             --add-label "ai:managed"             --add-label "ai:reviewing" || true
+      - name: Build AI PR metadata (initial)
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG' && steps.issue_diff_check.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.create_issue_pr.outputs.pr_number }}
+          ISSUE_NUMBER: ${{ inputs.target_number }}
+          BASE_BRANCH: ${{ steps.validate_issue_branch.outputs.base_branch }}
+          FIX_BRANCH: ${{ steps.issue_branch_name.outputs.fix_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail; python -m scripts.ci.build_pr_meta             --mode initial             --auto-loop "${{ inputs.auto_loop }}"             --output pr_meta_comment.md
+      - name: Upsert AI PR metadata (initial)
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG' && steps.issue_diff_check.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        uses: ./.coding-agent/.github/actions/upsert-marker-comment
+        with:
+          marker: ai-pr-meta
+          body-file: pr_meta_comment.md
+          repo: ${{ github.repository }}
+          issue-number: ${{ steps.create_issue_pr.outputs.pr_number }}
+      - name: Comment issue with issue PR link
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG' && steps.issue_diff_check.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ inputs.target_number }}
+          PR_URL: ${{ steps.create_issue_pr.outputs.pr_url }}
+        shell: bash
+        run: |
+          set -euo pipefail; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ai:fixing"             --add-label "ai:pr-opened" || true; printf '🔧 **Ace Created Fix PR**\n\n%s\n' "$PR_URL" > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+      - name: Dispatch review for issue PR
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG' && steps.issue_diff_check.outputs.has_changes == 'true' && inputs.auto_loop == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.create_issue_pr.outputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail; gh workflow run ai-review.yml             --ref "${{ github.event.repository.default_branch }}"             -f pr_number="$PR_NUMBER"             -f auto_loop="${{ inputs.auto_loop }}"             -f extra_prompt=""
+      - name: Hint for manual review on issue PR
+        if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG' && steps.issue_diff_check.outputs.has_changes == 'true' && inputs.auto_loop != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.create_issue_pr.outputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail; printf '✨ **Ace Fix Complete**\n\nThe fix has been applied to this PR. You can trigger AI review by commenting `/ace review` on this PR.\n' > /tmp/comment_body.md; gh issue comment "$PR_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+      - name: Fetch PR JSON and comments
+        if: inputs.target_type == 'pr'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.target_number }}
+        shell: bash
+        run: |
+          set -euo pipefail; gh api "repos/$REPO/pulls/$PR_NUMBER" > pr.json; gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate > pr_comments.json
+      - name: Load PR meta and review context
+        if: inputs.target_type == 'pr'
+        shell: bash
+        run: |
+          set -euo pipefail; python -m scripts.ci.extract_marker_comment             --comments-file pr_comments.json             --marker ai-pr-meta             --field json > pr_meta.json; python -m scripts.ci.extract_marker_comment             --comments-file pr_comments.json             --marker ai-review-context             --field json > review_context.json; cp pr_meta.json pr_meta_before_fix.json
+      - name: Force reset PR meta and labels
+        if: inputs.target_type == 'pr' && inputs.force == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.target_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          auto_loop_value="$(jq -r '.auto_loop' pr_meta.json)"
+
+          cp pr_meta.json pr_meta_force_reset.json
+          python -m scripts.ci.update_pr_meta_json \
+            --meta-file pr_meta_force_reset.json \
+            --set active_operation=idle \
+            --set status=reviewing \
+            --set requested_head_sha="" \
+            --set last_reviewed_head_sha="" \
+            --set-int failure_count=0 \
+            --set-int fix_round=1 \
+            --set-json last_error=null \
+            --set-json lock_owner=null \
+            --set-json auto_loop="$( [[ "$auto_loop_value" == "true" ]] && echo true || echo false )"
+
+          python -m scripts.ci.build_pr_meta \
+            --mode update \
+            --input-file pr_meta_force_reset.json \
+            --active-operation idle \
+            --requested-head-sha "" \
+            --last-reviewed-head-sha "" \
+            --auto-loop "$auto_loop_value" \
+            --output pr_meta_comment.md
+
+          python -m scripts.ci.upsert_comment \
+            --comments-file pr_comments.json \
+            --marker ai-pr-meta \
+            --body-file pr_meta_comment.md \
+            --repo "$REPO" \
+            --issue-number "$PR_NUMBER"
+
+          gh pr edit "$PR_NUMBER" --repo "$REPO" \
+            --remove-label "ai:reviewing" \
+            --remove-label "ai:review-approved" \
+            --remove-label "ai:changes-requested" \
+            --remove-label "ai:loop-exceeded" \
+            --remove-label "ai:needs-human" || true
+
+          mv pr_meta_force_reset.json pr_meta.json
+      - name: Checkout PR head branch
+        if: inputs.target_type == 'pr'
+        id: checkout_pr_head
+        shell: bash
+        run: |
+          set -euo pipefail; HEAD_REF="$(jq -r '.head.ref' pr.json)"; BASE_REF="$(jq -r '.base.ref' pr.json)"; git fetch origin "$HEAD_REF" "$BASE_REF"; git checkout -B "$HEAD_REF" "origin/$HEAD_REF"; HEAD_SHA="$(git rev-parse HEAD)"; echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"; echo "base_ref=$BASE_REF" >> "$GITHUB_OUTPUT"; echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+      - name: Load error recovery config
+        if: inputs.target_type == 'pr'
+        id: load_error_config
+        uses: ./.coding-agent/.github/actions/load-error-config
+      - name: PR idempotency guard
+        if: inputs.target_type == 'pr'
+        id: pr_guard
+        shell: bash
+        run: |
+          set -euo pipefail; active_operation="$(jq -r '.active_operation // "idle"' pr_meta.json)"; requested_head_sha="$(jq -r '.requested_head_sha // ""' pr_meta.json)"; current_head_sha="${{ steps.checkout_pr_head.outputs.head_sha }}"; if [[ "$active_operation" == "fixing" && "$requested_head_sha" == "$current_head_sha" ]]; then echo "can_run=false" >> "$GITHUB_OUTPUT"; echo "reason=already_fixing_same_sha" >> "$GITHUB_OUTPUT"; else echo "can_run=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Stop if PR idempotency guard blocks execution
+        if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run != 'true'
+        run: |
+          echo "PR is already under fix operation for current head SHA."
+      - name: Check failure count limit
+        if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true'
+        id: failure_guard
+        uses: ./.coding-agent/.github/actions/check-failure-count
+        with:
+          meta-file: pr_meta.json
+          max-failures: ${{ steps.load_error_config.outputs.max_failures }}
+          auto-label: ${{ steps.load_error_config.outputs.auto_label }}
+          pr-number: ${{ inputs.target_number }}
+          repo: ${{ github.repository }}
+          gh-token: ${{ github.token }}
+          comment-body: Maximum consecutive failures (${{ steps.load_error_config.outputs.max_failures }}) reached. Skipping fix. Please review manually.
+      - name: Mark PR active operation as fixing
+        if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
+        id: mark_pr_fixing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.target_number }}
+          LOCK_OWNER: ${{ github.run_id }}-${{ github.run_attempt }}-fix
+        shell: bash
+        run: |
+          set -euo pipefail; auto_loop_value="$(jq -r '.auto_loop' pr_meta.json)"; cp pr_meta.json pr_meta_fixing.json; python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_fixing.json --set base_branch="${{ steps.checkout_pr_head.outputs.base_ref }}" --set branch="${{ steps.checkout_pr_head.outputs.head_ref }}" --set status=fixing --set lock_owner="$LOCK_OWNER" --set-json auto_loop="$( [[ "$auto_loop_value" == "true" ]] && echo true || echo false )"; python -m scripts.ci.build_pr_meta             --mode update             --input-file pr_meta_fixing.json             --active-operation fixing             --requested-head-sha "${{ steps.checkout_pr_head.outputs.head_sha }}"             --auto-loop "$auto_loop_value"             --output pr_meta_comment.md
+      - name: Upsert AI PR metadata (fixing)
+        if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        uses: ./.coding-agent/.github/actions/upsert-marker-comment
+        with:
+          marker: ai-pr-meta
+          body-file: pr_meta_comment.md
+          repo: ${{ github.repository }}
+          issue-number: ${{ inputs.target_number }}
+      - name: Prepare PR retry round
+        if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
+        id: pr_round
+        shell: bash
+        run: |
+          set -euo pipefail; current_round="$(jq -r '.fix_round // 1' pr_meta.json)"; echo "next_round=$((current_round + 1))" >> "$GITHUB_OUTPUT"
+      - name: Build PR fix prompt
+        if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
+        env:
+          REPO_NAME: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.target_number }}
+          NEXT_ROUND: ${{ steps.pr_round.outputs.next_round }}
+          EXTRA_PROMPT: ${{ inputs.extra_prompt }}
+        shell: bash
+        run: |
+          set -euo pipefail; python -m scripts.ci.build_prompt             --mode fix             --pr-file pr.json             --pr-meta-file pr_meta.json             --review-context-file review_context.json             --output fix_prompt.md
+      - name: Run PR fix agent
+        if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail; python -m scripts.ci.run_opencode             --prompt-file fix_prompt.md             --output-file fix_result.json
+      - name: Check whether PR fix changed code
+        if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
+        id: pr_diff_check
+        shell: bash
+        run: |
+          set -euo pipefail; if git diff --quiet && git diff --cached --quiet; then echo "has_changes=false" >> "$GITHUB_OUTPUT"; else echo "has_changes=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Comment if PR fix produced no changes
+        if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true' && steps.pr_diff_check.outputs.has_changes != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.target_number }}
+        shell: bash
+        run: |
+          set -euo pipefail; printf '⚠️ **Ace Fix — No Changes**\n\nAce fix did not produce any new code changes for this PR round. Please review manually.\n' > /tmp/comment_body.md; gh issue comment "$PR_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+      - name: Build PR retry commit message
+        if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true' && steps.pr_diff_check.outputs.has_changes == 'true'
+        env:
+          PR_NUMBER: ${{ inputs.target_number }}
+          ROUND: ${{ steps.pr_round.outputs.next_round }}
+          HEAD_REF: ${{ steps.checkout_pr_head.outputs.head_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail; python -m scripts.ci.build_commit_msg             --mode retry             --result-file fix_result.json             --output commit_message.txt
+      - name: Commit and push PR retry fix
+        if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true' && steps.pr_diff_check.outputs.has_changes == 'true'
+        uses: ./.coding-agent/.github/actions/git-commit-push
+        with:
+          commit-message-file: commit_message.txt
+          preserve-files: "commit_message.txt pr.json pr_meta.json pr_comments.json"
+          cleanup-files: "pr.json pr_comments.json pr_meta.json pr_meta_fixing.json review_context.json fix_prompt.md fix_result.json fix_result.raw.txt commit_message.txt pr_meta_comment.md"
+      - name: Update PR meta to idle
+        if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
+        id: update_pr_meta_idle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.target_number }}
+        shell: bash
+        run: |
+          set -euo pipefail; if [[ -f /tmp/pr_meta.json ]]; then meta_file="/tmp/pr_meta.json"; else meta_file="pr_meta.json"; fi; if [[ -f /tmp/pr_comments.json ]]; then comments_file="/tmp/pr_comments.json"; else comments_file="pr_comments.json"; fi; auto_loop_value="$(jq -r '.auto_loop' "$meta_file")"; cp "$meta_file" pr_meta_idle.json; python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_idle.json --set base_branch="${{ steps.checkout_pr_head.outputs.base_ref }}" --set branch="${{ steps.checkout_pr_head.outputs.head_ref }}" --set status=reviewing --set-int failure_count=0 --set-json lock_owner=null --set-json auto_loop="$( [[ "$auto_loop_value" == "true" ]] && echo true || echo false )" --set-json last_error=null; python -m scripts.ci.build_pr_meta             --mode update             --input-file pr_meta_idle.json             --active-operation idle             --requested-head-sha "${{ steps.checkout_pr_head.outputs.head_sha }}"             --auto-loop "$auto_loop_value"             --output pr_meta_comment.md; echo "comments_file=$comments_file" >> "$GITHUB_OUTPUT"
+      - name: Upsert AI PR metadata (idle)
+        if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        uses: ./.coding-agent/.github/actions/upsert-marker-comment
+        with:
+          marker: ai-pr-meta
+          body-file: pr_meta_comment.md
+          repo: ${{ github.repository }}
+          issue-number: ${{ inputs.target_number }}
+          comments-file: ${{ steps.update_pr_meta_idle.outputs.comments_file }}
+      - name: Dispatch review for PR retry
+        if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true' && steps.pr_diff_check.outputs.has_changes == 'true' && inputs.auto_loop == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.target_number }}
+        shell: bash
+        run: |
+          set -euo pipefail; gh workflow run ai-review.yml             --ref "${{ github.event.repository.default_branch }}"             -f pr_number="$PR_NUMBER"             -f auto_loop="${{ inputs.auto_loop }}"             -f extra_prompt=""
+      - name: Hint for manual review on PR retry
+        if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true' && steps.pr_diff_check.outputs.has_changes == 'true' && inputs.auto_loop != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.target_number }}
+        shell: bash
+        run: |
+          set -euo pipefail; printf '✨ **Ace Fix Complete**\n\nThe fix has been applied to this PR. You can trigger AI review by commenting `/ace review` on this PR.\n' > /tmp/comment_body.md; gh issue comment "$PR_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+      - name: Rollback PR state on failure or cancellation
+        if: always() && inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.mark_pr_fixing.outcome == 'success' && (failure() || cancelled())
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.target_number }}
+          LOCK_OWNER: ${{ github.run_id }}-${{ github.run_attempt }}-fix
+        shell: bash
+        run: |
+          set +e
+          if [[ ! -f pr_meta_before_fix.json ]]; then
+            echo '{}' > pr_meta_before_fix.json
+          fi
+          gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate > pr_comments_rollback.json || true
+          python -m scripts.ci.extract_marker_comment --comments-file pr_comments_rollback.json --marker ai-pr-meta --field json > pr_meta_current_for_rollback.json || echo '{}' > pr_meta_current_for_rollback.json
+          current_lock_owner="$(jq -r '.lock_owner // ""' pr_meta_current_for_rollback.json)"
+          if [[ "$current_lock_owner" != "$LOCK_OWNER" ]]; then
+            echo "Skip rollback because lock owner changed: current=$current_lock_owner expected=$LOCK_OWNER"
+            exit 0
+          fi
+
+          current_failure_count="$(jq -r '.failure_count // 0' pr_meta_current_for_rollback.json 2>/dev/null || echo 0)"
+          new_failure_count=$((current_failure_count + 1))
+
+          python -m scripts.ci.build_pr_meta \
+            --mode update \
+            --input-file pr_meta_before_fix.json \
+            --output pr_meta_comment.md || true
+
+          cp pr_meta_before_fix.json pr_meta_rollback_with_failure.json || echo '{}' > pr_meta_rollback_with_failure.json
+          python -m scripts.ci.update_pr_meta_json \
+            --meta-file pr_meta_rollback_with_failure.json \
+            --set-int failure_count="$new_failure_count" \
+            --set last_error="Fix agent failed during execution" \
+            --set-json lock_owner=null || true
+          python -m scripts.ci.build_pr_meta \
+            --mode update \
+            --input-file pr_meta_rollback_with_failure.json \
+            --output pr_meta_comment.md || true
+
+          max_failures="${{ steps.load_error_config.outputs.max_failures }}"
+          auto_label="${{ steps.load_error_config.outputs.auto_label }}"
+          if [[ "$new_failure_count" -ge "$max_failures" && "$auto_label" == "true" ]]; then
+            gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "ai:needs-human" || true
+          fi
+
+          python -m scripts.ci.upsert_comment \
+            --comments-file pr_comments_rollback.json \
+            --marker ai-pr-meta \
+            --body-file pr_meta_comment.md \
+            --repo "$REPO" \
+            --issue-number "$PR_NUMBER" || true
