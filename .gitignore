@@ -13,3 +13,4 @@ scripts/create_fragment.data.json
 .pytest_cache
 
 .sisyphus
+*.pyc
