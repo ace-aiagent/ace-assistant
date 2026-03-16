@@ -1,0 +1,59 @@
+# Caller workflow for AI Fix — place in your repo's .github/workflows/ai-fix.yml
+# Replace ORG/coding-agent with your actual org/repo path for the coding-agent repository.
+
+name: AI Fix
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_type:
+        description: 'Target type: issue or pr'
+        required: true
+        type: choice
+        options: [issue, pr]
+      target_number:
+        description: 'Issue or PR number'
+        required: true
+        type: string
+      auto_loop:
+        description: 'Whether to auto dispatch ai-review after fix'
+        required: false
+        type: string
+        default: "true"
+      extra_prompt:
+        description: 'Additional user instructions for AI fix agent'
+        required: false
+        type: string
+        default: ""
+      triage_json:
+        description: 'Optional triage JSON for issue path'
+        required: false
+        type: string
+        default: ""
+      force:
+        description: 'Force reset state before running'
+        required: false
+        type: string
+        default: "false"
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: ai-fix-${{ inputs.target_number }}
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    uses: ORG/coding-agent/.github/workflows/ai-fix.yml@v1
+    with:
+      target_type: ${{ inputs.target_type }}
+      target_number: ${{ inputs.target_number }}
+      auto_loop: ${{ inputs.auto_loop }}
+      extra_prompt: ${{ inputs.extra_prompt }}
+      triage_json: ${{ inputs.triage_json }}
+      force: ${{ inputs.force }}
+    secrets: inherit

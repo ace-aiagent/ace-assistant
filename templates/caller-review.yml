@@ -1,0 +1,74 @@
+# Caller workflow for AI Review — place in your repo's .github/workflows/ai-review.yml
+# Replace ORG/coding-agent with your actual org/repo path for the coding-agent repository.
+
+name: AI Review
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: string
+      auto_loop:
+        description: 'Whether to auto-dispatch fix workflow after changes requested'
+        required: false
+        type: string
+        default: "true"
+      extra_prompt:
+        description: 'Additional user instructions for the AI reviewer'
+        required: false
+        type: string
+        default: ""
+      force:
+        description: 'Force reset PR state before review'
+        required: false
+        type: string
+        default: "false"
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: ai-review-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    uses: ORG/coding-agent/.github/workflows/ai-review.yml@v1
+    with:
+      pr_number: ${{ inputs.pr_number }}
+      auto_loop: ${{ inputs.auto_loop }}
+      extra_prompt: ${{ inputs.extra_prompt }}
+      force: ${{ inputs.force }}
+    secrets: inherit
+
+  trigger-fix:
+    needs: review
+    if: needs.review.outputs.needs_fix == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch fix workflow
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          FIX_PARAMS='${{ needs.review.outputs.fix_params }}'
+          TARGET_TYPE=$(echo "$FIX_PARAMS" | jq -r '.target_type // "pr"')
+          TARGET_NUMBER=$(echo "$FIX_PARAMS" | jq -r '.target_number')
+          EXTRA_PROMPT=$(echo "$FIX_PARAMS" | jq -r '.extra_prompt // ""')
+
+          gh workflow run ai-fix.yml \
+            --repo "$REPO" \
+            -f target_type="$TARGET_TYPE" \
+            -f target_number="$TARGET_NUMBER" \
+            -f auto_loop="true" \
+            -f extra_prompt="$EXTRA_PROMPT" \
+            -f force="false"
+
+          echo "::notice::Dispatched ai-fix for $TARGET_TYPE #$TARGET_NUMBER"

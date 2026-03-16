@@ -1,0 +1,129 @@
+# Caller workflow for AI Dispatch — place in your repo's .github/workflows/ai-dispatch.yml
+# Replace ORG/coding-agent with your actual org/repo path for the coding-agent repository.
+#
+# This caller handles event listening (issues, comments, PRs) and delegates the
+# triage/routing logic to the reusable dispatch workflow. After the reusable workflow
+# determines the route (fix or review), this caller dispatches the appropriate workflow.
+
+name: AI Dispatch
+
+on:
+  issues:
+    types: [opened, reopened]
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      target_type:
+        description: 'Target type: issue or pr'
+        required: true
+        type: choice
+        options: [issue, pr]
+      target_number:
+        description: 'Issue or PR number'
+        required: true
+        type: string
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options: [fix, review]
+      extra_prompt:
+        description: 'Additional instructions'
+        required: false
+        type: string
+        default: ''
+      force:
+        description: 'Force reset state before running'
+        required: false
+        type: string
+        default: 'false'
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: >-
+    ai-dispatch-${{
+      github.event.issue.number
+      || github.event.pull_request.number
+      || inputs.target_number
+      || github.run_id
+    }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    uses: ORG/coding-agent/.github/workflows/ai-dispatch.yml@v1
+    with:
+      event_name: ${{ github.event_name }}
+      target_type: ${{ inputs.target_type || '' }}
+      target_number: ${{ inputs.target_number || '' }}
+      action: ${{ inputs.action || '' }}
+      extra_prompt: ${{ inputs.extra_prompt || '' }}
+      force: ${{ inputs.force || 'false' }}
+      event_json: ${{ toJSON(github.event) }}
+    secrets: inherit
+
+  route-fix:
+    needs: dispatch
+    if: needs.dispatch.outputs.route_to == 'fix'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch fix workflow
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROUTE_PARAMS='${{ needs.dispatch.outputs.route_params }}'
+          TARGET_TYPE=$(echo "$ROUTE_PARAMS" | jq -r '.target_type // "issue"')
+          TARGET_NUMBER=$(echo "$ROUTE_PARAMS" | jq -r '.target_number')
+          AUTO_LOOP=$(echo "$ROUTE_PARAMS" | jq -r '.auto_loop // "true"')
+          EXTRA_PROMPT=$(echo "$ROUTE_PARAMS" | jq -r '.extra_prompt // ""')
+          TRIAGE_JSON=$(echo "$ROUTE_PARAMS" | jq -r '.triage_json // ""')
+          FORCE=$(echo "$ROUTE_PARAMS" | jq -r '.force // "false"')
+
+          gh workflow run ai-fix.yml \
+            --repo "$REPO" \
+            -f target_type="$TARGET_TYPE" \
+            -f target_number="$TARGET_NUMBER" \
+            -f auto_loop="$AUTO_LOOP" \
+            -f extra_prompt="$EXTRA_PROMPT" \
+            -f triage_json="$TRIAGE_JSON" \
+            -f force="$FORCE"
+
+          echo "::notice::Dispatched ai-fix for $TARGET_TYPE #$TARGET_NUMBER"
+
+  route-review:
+    needs: dispatch
+    if: needs.dispatch.outputs.route_to == 'review'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch review workflow
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROUTE_PARAMS='${{ needs.dispatch.outputs.route_params }}'
+          PR_NUMBER=$(echo "$ROUTE_PARAMS" | jq -r '.pr_number // .target_number')
+          AUTO_LOOP=$(echo "$ROUTE_PARAMS" | jq -r '.auto_loop // "true"')
+          EXTRA_PROMPT=$(echo "$ROUTE_PARAMS" | jq -r '.extra_prompt // ""')
+          FORCE=$(echo "$ROUTE_PARAMS" | jq -r '.force // "false"')
+
+          gh workflow run ai-review.yml \
+            --repo "$REPO" \
+            -f pr_number="$PR_NUMBER" \
+            -f auto_loop="$AUTO_LOOP" \
+            -f extra_prompt="$EXTRA_PROMPT" \
+            -f force="$FORCE"
+
+          echo "::notice::Dispatched ai-review for PR #$PR_NUMBER"
