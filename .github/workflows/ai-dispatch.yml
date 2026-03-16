@@ -1,0 +1,514 @@
+name: AI Dispatch
+on:
+  workflow_call:
+    inputs:
+      event_name:
+        description: 'The event that triggered the caller (issues, issue_comment, pull_request, workflow_dispatch)'
+        required: true
+        type: string
+      target_type:
+        description: 'Target type: issue or pr (for workflow_dispatch)'
+        required: false
+        type: string
+        default: ''
+      target_number:
+        description: 'Issue or PR number (for workflow_dispatch)'
+        required: false
+        type: string
+        default: ''
+      action:
+        description: 'Action to perform: fix or review (for workflow_dispatch)'
+        required: false
+        type: string
+        default: ''
+      extra_prompt:
+        description: 'Additional instructions'
+        required: false
+        type: string
+        default: ''
+      force:
+        description: 'Force reset state before running'
+        required: false
+        type: string
+        default: 'false'
+      event_json:
+        description: 'Serialized event payload JSON (github.event as JSON string)'
+        required: true
+        type: string
+    secrets:
+      OPENCODE_AUTH_JSON_B64:
+        required: true
+      GH_PAT:
+        required: true
+    outputs:
+      route_to:
+        description: 'Routing target: fix, review, or none'
+        value: ${{ jobs.resolve-route.outputs.route_to }}
+      route_params:
+        description: 'JSON string with routing parameters for the target workflow'
+        value: ${{ jobs.resolve-route.outputs.route_params }}
+jobs:
+  ensure-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout business repository for config access
+        uses: actions/checkout@v4
+      - name: Ensure labels
+        uses: ace0-uai/coding-agent/.github/actions/ensure-labels@v1
+        with:
+          github-token: ${{ github.token }}
+
+  # ─── Job: Issue Triage ───────────────────────────────────────────────
+  # event_name == 'issues'
+  # Behavior: check labels → skip if processing → triage → handle verdict → output route
+  triage-issue:
+    if: inputs.event_name == 'issues'
+    needs: ensure-labels
+    runs-on: ubuntu-latest
+    outputs:
+      route_to: ${{ steps.set_route.outputs.route_to }}
+      route_params: ${{ steps.set_route.outputs.route_params }}
+    env:
+      PYTHONPATH: ${{ github.workspace }}/.coding-agent
+    steps:
+      - name: Bootstrap AI worker
+        uses: ace0-uai/coding-agent/.github/actions/ai-worker-bootstrap@v1
+        with:
+          opencode-auth-b64: ${{ secrets.OPENCODE_AUTH_JSON_B64 }}
+
+      - name: Handle issue event
+        id: triage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_JSON: ${{ inputs.event_json }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ISSUE_NUMBER="$(echo "$EVENT_JSON" | jq -r '.issue.number')"
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+
+          labels="$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/labels" --jq '.[].name' || true)"
+          if echo "$labels" | grep -qE 'ai:triaging|ai:fixing|ai:pr-opened'; then
+            echo "::notice::Issue #$ISSUE_NUMBER already being processed, skipping"
+            echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
+            --remove-label "ai:not-a-bug" \
+            --remove-label "ai:confirmed" \
+            --remove-label "ai:needs-human" \
+            --add-label "ai:triaging" || true
+
+          gh api "repos/$REPO/issues/$ISSUE_NUMBER" > /tmp/issue.json
+
+          python -m scripts.ci.parse_issue_form \
+            --issue-file /tmp/issue.json \
+            --output /tmp/issue_fields.json
+
+          python -m scripts.ci.build_prompt \
+            --mode triage \
+            --issue-file /tmp/issue.json \
+            --fields-file /tmp/issue_fields.json \
+            --output /tmp/triage_prompt.md
+
+          python -m scripts.ci.run_opencode \
+            --prompt-file /tmp/triage_prompt.md \
+            --output-file /tmp/triage_result.json
+
+          verdict="$(jq -r '.verdict // ""' /tmp/triage_result.json)"
+          echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+
+          if [[ "$verdict" == "NOT_A_BUG" ]]; then
+            reason="$(jq -r '.reason // "N/A"' /tmp/triage_result.json)"
+            gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
+              --remove-label "ai:triaging" \
+              --add-label "ai:not-a-bug" || true
+            printf 'Ace triage result: NOT_A_BUG\n\nReason: %s\n' "$reason" > /tmp/comment_body.md
+            gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+            exit 0
+          fi
+
+          if [[ "$verdict" == "NEEDS_HUMAN" ]]; then
+            reason="$(jq -r '.reason // "N/A"' /tmp/triage_result.json)"
+            gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
+              --remove-label "ai:triaging" \
+              --add-label "ai:needs-human" || true
+            printf 'Ace triage result: NEEDS_HUMAN\n\nReason: %s\n' "$reason" > /tmp/comment_body.md
+            gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+            exit 0
+          fi
+
+          if [[ "$verdict" != "CONFIRMED_BUG" ]]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
+              --remove-label "ai:triaging" \
+              --add-label "ai:needs-human" || true
+            gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "Unexpected triage verdict: ${verdict}. Please review manually."
+            exit 0
+          fi
+
+          gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
+            --remove-label "ai:triaging" \
+            --remove-label "ai:not-a-bug" \
+            --remove-label "ai:needs-human" \
+            --add-label "ai:confirmed" \
+            --add-label "ai:fixing" || true
+
+          triage_json="$(jq -c '.' /tmp/triage_result.json)"
+          echo "triage_json=$triage_json" >> "$GITHUB_OUTPUT"
+
+      - name: Set route output
+        id: set_route
+        shell: bash
+        run: |
+          set -euo pipefail
+          verdict="${{ steps.triage.outputs.verdict }}"
+          issue_number="${{ steps.triage.outputs.issue_number }}"
+          triage_json="${{ steps.triage.outputs.triage_json }}"
+
+          if [[ "$verdict" == "CONFIRMED_BUG" ]]; then
+            echo "route_to=fix" >> "$GITHUB_OUTPUT"
+            echo "route_params={\"target_type\":\"issue\",\"target_number\":\"$issue_number\",\"auto_loop\":\"true\",\"extra_prompt\":\"\",\"triage_json\":$(echo "$triage_json" | jq -c '.' 2>/dev/null || echo '{}')}" >> "$GITHUB_OUTPUT"
+          else
+            echo "route_to=none" >> "$GITHUB_OUTPUT"
+            echo "route_params={}" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ─── Job: ChatOps (issue_comment) ───────────────────────────────────
+  # event_name == 'issue_comment'
+  # Behavior: parse /ace fix|review → output route
+  chatops:
+    if: inputs.event_name == 'issue_comment'
+    needs: ensure-labels
+    runs-on: ubuntu-latest
+    outputs:
+      route_to: ${{ steps.set_route.outputs.route_to }}
+      route_params: ${{ steps.set_route.outputs.route_params }}
+    steps:
+      - name: Handle ChatOps issue_comment event
+        id: chatops_parse
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_JSON: ${{ inputs.event_json }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          COMMENT_BODY="$(echo "$EVENT_JSON" | jq -r '.comment.body // ""')"
+          COMMENT_ID="$(echo "$EVENT_JSON" | jq -r '.comment.id')"
+          ISSUE_NUMBER="$(echo "$EVENT_JSON" | jq -r '.issue.number')"
+          IS_PR="$(echo "$EVENT_JSON" | jq -r 'if .issue.pull_request != null then "true" else "false" end')"
+          COMMENT_USER_TYPE="$(echo "$EVENT_JSON" | jq -r '.comment.user.type // ""')"
+          AUTHOR_ASSOCIATION="$(echo "$EVENT_JSON" | jq -r '.comment.author_association // ""')"
+
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "is_pr=$IS_PR" >> "$GITHUB_OUTPUT"
+
+          if [[ "$COMMENT_USER_TYPE" == "Bot" ]]; then
+            echo "command=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          case "$AUTHOR_ASSOCIATION" in
+            OWNER|MEMBER|COLLABORATOR) ;;
+            *)
+              echo "command=skip" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+
+          raw_first_line="$(printf '%s' "$COMMENT_BODY" | head -n1 | sed 's/^[[:space:]]*//')"
+          first_line="$(printf '%s' "$raw_first_line" | tr '[:upper:]' '[:lower:]')"
+
+          if [[ "$first_line" =~ ^/ace[[:space:]]+(fix|review) ]]; then
+            command="${BASH_REMATCH[1]}"
+          else
+            echo "No matching /ace command."
+            echo "command=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          force="false"
+
+          prefix_match="${BASH_REMATCH[0]}"
+          prefix_len="${#prefix_match}"
+          inline_prompt="${raw_first_line:$prefix_len}"
+          inline_prompt="$(printf '%s' "$inline_prompt" | sed 's/^[[:space:]]*//')"
+
+          if [[ "$inline_prompt" =~ (^|[[:space:]])--force($|[[:space:]]) ]]; then
+            force="true"
+            inline_prompt="$(printf '%s' "$inline_prompt" | sed -E 's/(^|[[:space:]])--force($|[[:space:]])/ /g' | sed -E 's/[[:space:]]+/ /g' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+          fi
+
+          rest_lines="$(printf '%s' "$COMMENT_BODY" | tail -n +2)"
+
+          if [[ -n "$inline_prompt" && -n "$rest_lines" ]]; then
+            extra_prompt="${inline_prompt}"
+            extra_prompt+=$'\n'
+            extra_prompt+="${rest_lines}"
+          elif [[ -n "$inline_prompt" ]]; then
+            extra_prompt="$inline_prompt"
+          elif [[ -n "$rest_lines" ]]; then
+            extra_prompt="$rest_lines"
+          else
+            extra_prompt=""
+          fi
+
+          echo "command=$command" >> "$GITHUB_OUTPUT"
+          echo "force=$force" >> "$GITHUB_OUTPUT"
+          # Use file for extra_prompt since it may contain newlines
+          echo "$extra_prompt" > /tmp/extra_prompt.txt
+
+          if [[ "$IS_PR" == "true" ]]; then
+            gh api "/repos/$REPO/issues/comments/$COMMENT_ID/reactions" -X POST -f content='eyes' || true
+          fi
+
+          if [[ "$IS_PR" != "true" && "$command" == "review" ]]; then
+            gh issue comment "$ISSUE_NUMBER" --repo "$REPO" \
+              --body "\`/ace review\` is only available on PRs, not issues."
+            echo "command=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$IS_PR" != "true" && "$command" == "fix" ]]; then
+            labels="$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/labels" --jq '.[].name' || true)"
+            if echo "$labels" | grep -qx 'ai:fixing'; then
+              if [[ "$force" == "true" ]]; then
+                gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --remove-label "ai:fixing" || true
+              else
+                gh api "/repos/$REPO/issues/comments/$COMMENT_ID/reactions" -X POST -f content='-1' || true
+                gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "Fix operation is already in progress."
+                echo "command=skip" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+            gh api "/repos/$REPO/issues/comments/$COMMENT_ID/reactions" -X POST -f content='eyes' || true
+          fi
+
+      - name: Set route output
+        id: set_route
+        shell: bash
+        run: |
+          set -euo pipefail
+          command="${{ steps.chatops_parse.outputs.command }}"
+          issue_number="${{ steps.chatops_parse.outputs.issue_number }}"
+          is_pr="${{ steps.chatops_parse.outputs.is_pr }}"
+          force="${{ steps.chatops_parse.outputs.force }}"
+          extra_prompt=""
+          if [[ -f /tmp/extra_prompt.txt ]]; then
+            extra_prompt="$(cat /tmp/extra_prompt.txt)"
+          fi
+
+          if [[ "$command" == "skip" ]]; then
+            echo "route_to=none" >> "$GITHUB_OUTPUT"
+            echo "route_params={}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$is_pr" == "true" && "$command" == "fix" ]]; then
+            echo "route_to=fix" >> "$GITHUB_OUTPUT"
+            # Use jq to safely encode extra_prompt into JSON
+            route_params="$(jq -n --arg tn "$issue_number" --arg ep "$extra_prompt" --arg f "$force" \
+              '{target_type:"pr",target_number:$tn,auto_loop:"false",force:$f,extra_prompt:$ep}')"
+            echo "route_params=$route_params" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$is_pr" == "true" && "$command" == "review" ]]; then
+            echo "route_to=review" >> "$GITHUB_OUTPUT"
+            route_params="$(jq -n --arg pn "$issue_number" --arg ep "$extra_prompt" --arg f "$force" \
+              '{pr_number:$pn,auto_loop:"false",force:$f,extra_prompt:$ep}')"
+            echo "route_params=$route_params" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Issue fix
+          echo "route_to=fix" >> "$GITHUB_OUTPUT"
+          route_params="$(jq -n --arg tn "$issue_number" --arg ep "$extra_prompt" --arg f "$force" \
+            '{target_type:"issue",target_number:$tn,auto_loop:"false",force:$f,extra_prompt:$ep}')"
+          echo "route_params=$route_params" >> "$GITHUB_OUTPUT"
+
+  # ─── Job: PR Event Dispatch ─────────────────────────────────────────
+  # event_name == 'pull_request'
+  # Behavior: check branch prefix or ai:managed label → output route to review
+  dispatch-pr-review:
+    if: inputs.event_name == 'pull_request'
+    needs: ensure-labels
+    runs-on: ubuntu-latest
+    outputs:
+      route_to: ${{ steps.set_route.outputs.route_to }}
+      route_params: ${{ steps.set_route.outputs.route_params }}
+    steps:
+      - name: Checkout business repository for config access
+        uses: actions/checkout@v4
+
+      - name: Load branch detection patterns
+        id: load-config
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          config_file="${{ github.workspace }}/.github/ace-config.json"
+          default_patterns="$(printf '%b' 'ace/\x2a,fix/\x2a,issue-\x2a')"
+
+          patterns="$(jq -r '.branch.detection_patterns | join(",")' "$config_file" 2>/dev/null || printf '%s\n' "$default_patterns")"
+          if [[ -z "$patterns" || "$patterns" == "null" ]]; then
+            patterns="$default_patterns"
+          fi
+
+          echo "patterns=$patterns" >> "$GITHUB_OUTPUT"
+
+      - name: Handle pull_request event
+        id: pr_check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_JSON: ${{ inputs.event_json }}
+          DETECTION_PATTERNS: ${{ steps.load-config.outputs.patterns }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PR_NUMBER="$(echo "$EVENT_JSON" | jq -r '.pull_request.number')"
+          HEAD_REF="$(echo "$EVENT_JSON" | jq -r '.pull_request.head.ref')"
+
+          labels="$(gh api "repos/$REPO/issues/$PR_NUMBER/labels" --jq '.[].name' || true)"
+
+          should_dispatch="false"
+          IFS=',' read -r -a patterns <<< "$DETECTION_PATTERNS"
+          for pattern in "${patterns[@]}"; do
+            if [[ "$HEAD_REF" == $pattern ]]; then
+              should_dispatch="true"
+              break
+            fi
+          done
+
+          if echo "$labels" | grep -qx 'ai:managed'; then
+            should_dispatch="true"
+          fi
+
+          echo "should_dispatch=$should_dispatch" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+          if [[ "$should_dispatch" != "true" ]]; then
+            echo "::notice::PR #$PR_NUMBER is not AI-managed, skipping review dispatch"
+          fi
+
+      - name: Set route output
+        id: set_route
+        shell: bash
+        run: |
+          set -euo pipefail
+          should_dispatch="${{ steps.pr_check.outputs.should_dispatch }}"
+          pr_number="${{ steps.pr_check.outputs.pr_number }}"
+
+          if [[ "$should_dispatch" == "true" ]]; then
+            echo "route_to=review" >> "$GITHUB_OUTPUT"
+            echo "route_params={\"pr_number\":\"$pr_number\",\"auto_loop\":\"true\",\"extra_prompt\":\"\"}" >> "$GITHUB_OUTPUT"
+          else
+            echo "route_to=none" >> "$GITHUB_OUTPUT"
+            echo "route_params={}" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ─── Job: Manual Dispatch ───────────────────────────────────────────
+  # event_name == 'workflow_dispatch'
+  # Behavior: route to fix or review based on target_type + action
+  dispatch-manual:
+    if: inputs.event_name == 'workflow_dispatch'
+    needs: ensure-labels
+    runs-on: ubuntu-latest
+    outputs:
+      route_to: ${{ steps.set_route.outputs.route_to }}
+      route_params: ${{ steps.set_route.outputs.route_params }}
+    steps:
+      - name: Set route output
+        id: set_route
+        env:
+          TARGET_TYPE: ${{ inputs.target_type }}
+          TARGET_NUMBER: ${{ inputs.target_number }}
+          ACTION: ${{ inputs.action }}
+          EXTRA_PROMPT: ${{ inputs.extra_prompt }}
+          FORCE: ${{ inputs.force }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$TARGET_TYPE" == "issue" && "$ACTION" == "fix" ]]; then
+            echo "route_to=fix" >> "$GITHUB_OUTPUT"
+            route_params="$(jq -n --arg tn "$TARGET_NUMBER" --arg ep "$EXTRA_PROMPT" --arg f "$FORCE" \
+              '{target_type:"issue",target_number:$tn,auto_loop:"true",force:$f,extra_prompt:$ep}')"
+            echo "route_params=$route_params" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$TARGET_TYPE" == "pr" && "$ACTION" == "fix" ]]; then
+            echo "route_to=fix" >> "$GITHUB_OUTPUT"
+            route_params="$(jq -n --arg tn "$TARGET_NUMBER" --arg ep "$EXTRA_PROMPT" --arg f "$FORCE" \
+              '{target_type:"pr",target_number:$tn,auto_loop:"true",force:$f,extra_prompt:$ep}')"
+            echo "route_params=$route_params" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$TARGET_TYPE" == "pr" && "$ACTION" == "review" ]]; then
+            echo "route_to=review" >> "$GITHUB_OUTPUT"
+            route_params="$(jq -n --arg tn "$TARGET_NUMBER" --arg ep "$EXTRA_PROMPT" --arg f "$FORCE" \
+              '{pr_number:$tn,auto_loop:"true",force:$f,extra_prompt:$ep}')"
+            echo "route_params=$route_params" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$TARGET_TYPE" == "issue" && "$ACTION" == "review" ]]; then
+            echo "route_to=none" >> "$GITHUB_OUTPUT"
+            echo "route_params={}" >> "$GITHUB_OUTPUT"
+            gh issue comment "$TARGET_NUMBER" --repo "${{ github.repository }}" \
+              --body "\`review\` operation is only available for PR targets."
+            exit 0
+          fi
+
+          echo "Unsupported dispatch combination: target_type=$TARGET_TYPE, action=$ACTION"
+          exit 1
+
+  # ─── Job: Resolve Final Route ───────────────────────────────────────
+  # Aggregates outputs from whichever event-specific job ran
+  resolve-route:
+    if: always()
+    needs: [triage-issue, chatops, dispatch-pr-review, dispatch-manual]
+    runs-on: ubuntu-latest
+    outputs:
+      route_to: ${{ steps.resolve.outputs.route_to }}
+      route_params: ${{ steps.resolve.outputs.route_params }}
+    steps:
+      - name: Resolve route from event-specific job
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Only one of the event-specific jobs will have run; collect its outputs
+          route_to="${{ needs.triage-issue.outputs.route_to }}"
+          route_params="${{ needs.triage-issue.outputs.route_params }}"
+
+          if [[ -z "$route_to" ]]; then
+            route_to="${{ needs.chatops.outputs.route_to }}"
+            route_params="${{ needs.chatops.outputs.route_params }}"
+          fi
+
+          if [[ -z "$route_to" ]]; then
+            route_to="${{ needs.dispatch-pr-review.outputs.route_to }}"
+            route_params="${{ needs.dispatch-pr-review.outputs.route_params }}"
+          fi
+
+          if [[ -z "$route_to" ]]; then
+            route_to="${{ needs.dispatch-manual.outputs.route_to }}"
+            route_params="${{ needs.dispatch-manual.outputs.route_params }}"
+          fi
+
+          if [[ -z "$route_to" ]]; then
+            route_to="none"
+            route_params="{}"
+          fi
+
+          echo "route_to=$route_to" >> "$GITHUB_OUTPUT"
+          echo "route_params=$route_params" >> "$GITHUB_OUTPUT"
