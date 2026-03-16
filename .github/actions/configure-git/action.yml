@@ -1,0 +1,57 @@
+# Composite action: configure git user identity for CI commits.
+# Reads bot identity from config file with 3-tier priority:
+# 1. Explicit inputs (name, email)
+# 2. Config file values (bot.name, bot.email)
+# 3. Hardcoded defaults (ace-uai[bot])
+name: Configure Git Identity
+description: Configure git user.name and user.email with config file support
+
+inputs:
+  name:
+    description: Git user name (overrides config file)
+    required: false
+    default: ''
+  email:
+    description: Git user email (overrides config file)
+    required: false
+    default: ''
+  config-path:
+    description: Path to ace-config.json for reading bot identity
+    required: false
+    default: .github/ace-config.json
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve git identity
+      id: resolve
+      shell: bash
+      env:
+        INPUT_NAME: ${{ inputs.name }}
+        INPUT_EMAIL: ${{ inputs.email }}
+        CONFIG_PATH: ${{ inputs.config-path }}
+      run: |
+        set -euo pipefail
+        DEFAULT_NAME="ace-uai[bot]"
+        DEFAULT_EMAIL="ace-uai[bot]@users.noreply.github.com"
+        
+        # Try config file
+        CONFIG_NAME=""
+        CONFIG_EMAIL=""
+        if [ -f "$CONFIG_PATH" ]; then
+          CONFIG_NAME=$(jq -r '.bot.name // empty' "$CONFIG_PATH" 2>/dev/null || true)
+          CONFIG_EMAIL=$(jq -r '.bot.email // empty' "$CONFIG_PATH" 2>/dev/null || true)
+        fi
+        
+        # 3-tier priority: inputs > config > defaults
+        RESOLVED_NAME="${INPUT_NAME:-${CONFIG_NAME:-$DEFAULT_NAME}}"
+        RESOLVED_EMAIL="${INPUT_EMAIL:-${CONFIG_EMAIL:-$DEFAULT_EMAIL}}"
+        
+        echo "name=${RESOLVED_NAME}" >> "$GITHUB_OUTPUT"
+        echo "email=${RESOLVED_EMAIL}" >> "$GITHUB_OUTPUT"
+    - name: Configure git identity
+      shell: bash
+      run: |
+        set -euo pipefail
+        git config user.name "${{ steps.resolve.outputs.name }}"
+        git config user.email "${{ steps.resolve.outputs.email }}"

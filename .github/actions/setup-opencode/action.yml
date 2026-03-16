@@ -1,0 +1,33 @@
+# Composite action: restore OpenCode auth and install CLI.
+name: Setup OpenCode
+description: Restore OpenCode auth.json and install OpenCode CLI
+
+inputs:
+  opencode-auth-b64:
+    description: Base64-encoded OpenCode auth.json content
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Restore OpenCode auth.json
+      shell: bash
+      env:
+        OPENCODE_AUTH_JSON_B64: ${{ inputs.opencode-auth-b64 }}
+      run: |
+        set -euo pipefail
+        mkdir -p ~/.local/share/opencode
+        printf '%s' "$OPENCODE_AUTH_JSON_B64" | base64 -d > ~/.local/share/opencode/auth.json
+        chmod 600 ~/.local/share/opencode/auth.json
+
+    - name: Install OpenCode CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        curl -fsSL https://opencode.ai/install | bash
+        if [[ -x "$HOME/.opencode/bin/opencode" ]]; then
+          echo "$HOME/.opencode/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.opencode/bin:$PATH"
+        fi
+        command -v opencode
+        opencode --version

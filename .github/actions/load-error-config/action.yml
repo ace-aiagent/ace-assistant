@@ -1,0 +1,35 @@
+name: Load Error Recovery Config
+description: Read max failures and auto label settings from config
+
+inputs:
+  config-file:
+    description: Path to ace-config.json
+    required: false
+    default: .github/ace-config.json
+
+outputs:
+  max_failures:
+    description: Maximum consecutive failures allowed
+    value: ${{ steps.load.outputs.max_failures }}
+  auto_label:
+    description: Whether to auto label when threshold reached
+    value: ${{ steps.load.outputs.auto_label }}
+
+runs:
+  using: composite
+  steps:
+    - name: Load error recovery config
+      id: load
+      shell: bash
+      env:
+        CONFIG_FILE: ${{ inputs.config-file }}
+      run: |
+        set -euo pipefail
+        MAX_FAILURES="3"
+        AUTO_LABEL="true"
+        if [[ -f "$CONFIG_FILE" ]]; then
+          MAX_FAILURES="$(jq -r '.error_recovery.max_consecutive_failures // 3' "$CONFIG_FILE")"
+          AUTO_LABEL="$(jq -r '.error_recovery.auto_label_on_max_failures // true' "$CONFIG_FILE")"
+        fi
+        echo "max_failures=$MAX_FAILURES" >> "$GITHUB_OUTPUT"
+        echo "auto_label=$AUTO_LABEL" >> "$GITHUB_OUTPUT"

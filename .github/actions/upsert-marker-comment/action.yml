@@ -1,0 +1,38 @@
+# Composite action: fetch PR/issue comments and upsert a marker-based comment.
+name: Upsert Marker Comment
+description: >
+  Fetches all comments for a PR/issue via gh api, then upserts a comment
+  identified by a marker string. Requires GH_TOKEN env var to be set by caller.
+
+inputs:
+  marker:
+    description: Marker name for identifying the comment (e.g. ai-pr-meta)
+    required: true
+  body-file:
+    description: Path to the file containing the comment body
+    required: true
+  repo:
+    description: Repository in owner/repo format
+    required: true
+  issue-number:
+    description: PR or issue number
+    required: true
+  comments-file:
+    description: Path to cache fetched comments JSON
+    required: false
+    default: pr_comments.json
+
+runs:
+  using: composite
+  steps:
+    - name: Fetch comments and upsert marker comment
+      shell: bash
+      run: |
+        set -euo pipefail
+        gh api "repos/${{ inputs.repo }}/issues/${{ inputs.issue-number }}/comments" --paginate > "${{ inputs.comments-file }}"
+        python -m scripts.ci.upsert_comment \
+          --comments-file "${{ inputs.comments-file }}" \
+          --marker "${{ inputs.marker }}" \
+          --body-file "${{ inputs.body-file }}" \
+          --repo "${{ inputs.repo }}" \
+          --issue-number "${{ inputs.issue-number }}"

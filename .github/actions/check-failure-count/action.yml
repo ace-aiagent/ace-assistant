@@ -1,0 +1,65 @@
+name: Check Failure Count
+description: Block workflow when failure threshold is reached
+
+inputs:
+  failure-count:
+    description: Current consecutive failure count
+    required: false
+    default: ''
+  meta-file:
+    description: PR meta file path used when failure-count is not provided
+    required: false
+    default: ''
+  max-failures:
+    description: Maximum allowed consecutive failures
+    required: true
+  auto-label:
+    description: Whether to add ai:needs-human label at threshold
+    required: true
+  pr-number:
+    description: Pull request number
+    required: true
+  repo:
+    description: Repository in owner/name format
+    required: true
+  gh-token:
+    description: GitHub token used by gh CLI
+    required: true
+  comment-body:
+    description: Comment body when threshold is reached
+    required: true
+
+outputs:
+  can_proceed:
+    description: Whether workflow can continue
+    value: ${{ steps.guard.outputs.can_proceed }}
+
+runs:
+  using: composite
+  steps:
+    - name: Evaluate failure threshold
+      id: guard
+      shell: bash
+      env:
+        FAILURE_COUNT: ${{ inputs.failure-count }}
+        META_FILE: ${{ inputs.meta-file }}
+        MAX_FAILURES: ${{ inputs.max-failures }}
+        AUTO_LABEL: ${{ inputs.auto-label }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        REPO: ${{ inputs.repo }}
+        GH_TOKEN: ${{ inputs.gh-token }}
+        COMMENT_BODY: ${{ inputs.comment-body }}
+      run: |
+        set -euo pipefail
+        if [[ -z "$FAILURE_COUNT" ]]; then
+          FAILURE_COUNT="$(jq -r '.failure_count // 0' "$META_FILE")"
+        fi
+        if [[ "$FAILURE_COUNT" -ge "$MAX_FAILURES" ]]; then
+          echo "can_proceed=false" >> "$GITHUB_OUTPUT"
+          if [[ "$AUTO_LABEL" == "true" ]]; then
+            gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "ai:needs-human" || true
+          fi
+          gh issue comment "$PR_NUMBER" --repo "$REPO" --body "$COMMENT_BODY"
+        else
+          echo "can_proceed=true" >> "$GITHUB_OUTPUT"
+        fi

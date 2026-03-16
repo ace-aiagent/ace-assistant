@@ -1,0 +1,83 @@
+# Composite action: preserve temp artifacts, clean workspace, commit, and push.
+name: Git Commit And Push
+description: Preserve selected files, clean temp files, commit staged changes, and push branch
+
+inputs:
+  commit-message-file:
+    description: Path to commit message file
+    required: true
+  preserve-files:
+    description: Space-separated list of files to copy to /tmp before cleanup
+    required: true
+  cleanup-files:
+    description: Space-separated list of temporary files to remove before commit
+    required: true
+  branch:
+    description: Branch to push to; when empty pushes HEAD
+    required: false
+    default: ""
+  force-with-lease:
+    description: Whether to push with --force-with-lease
+    required: false
+    default: "true"
+
+outputs:
+  committed:
+    description: Whether a commit was created
+    value: ${{ steps.commit_push.outputs.committed }}
+
+runs:
+  using: composite
+  steps:
+    - name: Preserve, cleanup, commit, and push
+      id: commit_push
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        for file in ${{ inputs.preserve-files }}; do
+          if [[ -f "$file" ]]; then
+            cp "$file" "/tmp/$(basename "$file")"
+          fi
+        done
+
+        for file in ${{ inputs.cleanup-files }}; do
+          if [[ -d "$file" ]]; then
+            rm -rf "$file"
+          else
+            rm -f "$file"
+          fi
+        done
+
+        git add -A
+
+        commit_file="${{ inputs.commit-message-file }}"
+        if [[ ! -f "$commit_file" ]]; then
+          preserved_commit_file="/tmp/$(basename "$commit_file")"
+          if [[ -f "$preserved_commit_file" ]]; then
+            commit_file="$preserved_commit_file"
+          fi
+        fi
+
+        if git diff --cached --quiet; then
+          echo "committed=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        git commit -F "$commit_file"
+
+        if [[ "${{ inputs.force-with-lease }}" == "true" ]]; then
+          if [[ -n "${{ inputs.branch }}" ]]; then
+            git push -u origin "${{ inputs.branch }}" --force-with-lease
+          else
+            git push origin HEAD --force-with-lease
+          fi
+        else
+          if [[ -n "${{ inputs.branch }}" ]]; then
+            git push -u origin "${{ inputs.branch }}"
+          else
+            git push origin HEAD
+          fi
+        fi
+
+        echo "committed=true" >> "$GITHUB_OUTPUT"

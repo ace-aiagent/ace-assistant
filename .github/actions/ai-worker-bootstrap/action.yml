@@ -1,0 +1,53 @@
+# Composite action: common bootstrap steps for AI worker workflows.
+# Handles dual checkout: business repo + coding-agent repo.
+name: AI Worker Bootstrap
+description: Checkout repos, setup Python/uv, OpenCode auth, git identity, and PYTHONPATH
+
+inputs:
+  opencode-auth-b64:
+    description: Base64-encoded OpenCode auth.json content
+    required: true
+  coding-agent-repo:
+    description: "coding-agent repository in owner/repo format"
+    required: false
+    default: "ace0-uai/coding-agent"
+  coding-agent-ref:
+    description: "coding-agent ref to checkout (tag, branch, or SHA)"
+    required: false
+    default: "v1"
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout business repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        persist-credentials: true
+
+    - name: Checkout coding-agent
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.coding-agent-repo }}
+        ref: ${{ inputs.coding-agent-ref }}
+        path: .coding-agent
+
+    - name: Set PYTHONPATH for CI scripts
+      shell: bash
+      run: echo "PYTHONPATH=${{ github.workspace }}/.coding-agent" >> "$GITHUB_ENV"
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+
+    - name: Setup OpenCode
+      uses: ./.coding-agent/.github/actions/setup-opencode
+      with:
+        opencode-auth-b64: ${{ inputs.opencode-auth-b64 }}
+
+    - name: Configure git identity
+      uses: ./.coding-agent/.github/actions/configure-git

@@ -1,0 +1,41 @@
+# Composite action: create/update all AI-managed labels
+name: Ensure Labels
+description: Create/update all AI-managed labels for workflow automation
+
+inputs:
+  github-token:
+    description: GitHub token for label management
+    required: true
+  config-path:
+    description: Path to ace-config.json containing label definitions
+    required: false
+    default: .github/ace-config.json
+
+runs:
+  using: composite
+  steps:
+    - name: Ensure AI labels exist
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        CONFIG_FILE: ${{ inputs.config-path }}
+      run: |
+        set -euo pipefail
+        
+        # Load labels from config file or use defaults
+        if [ -f "$CONFIG_FILE" ]; then
+          LABELS_JSON=$(jq -r '.labels // empty' "$CONFIG_FILE" 2>/dev/null || echo "")
+        else
+          LABELS_JSON=""
+        fi
+        
+        # Fallback to default labels if config missing or invalid
+        if [ -z "$LABELS_JSON" ] || [ "$LABELS_JSON" = "null" ]; then
+          LABELS_JSON='{"triaging":{"color":"1D76DB","description":"Ace is triaging this issue"},"confirmed":{"color":"0E8A16","description":"Ace confirmed this is a real bug"},"not-a-bug":{"color":"B60205","description":"Ace thinks this is not a bug"},"needs-human":{"color":"FBCA04","description":"Ace needs human input or failed to proceed"},"fixing":{"color":"5319E7","description":"Ace is preparing a fix"},"pr-opened":{"color":"0052CC","description":"Ace opened a PR for this issue"},"managed":{"color":"5319E7","description":"PR is managed by Ace loop"},"reviewing":{"color":"1D76DB","description":"Ace is reviewing the PR"},"changes-requested":{"color":"D93F0B","description":"Ace review requested changes"},"review-approved":{"color":"0E8A16","description":"Ace review approved the PR"},"loop-exceeded":{"color":"B60205","description":"Ace review/fix loop exceeded max rounds"}}'
+        fi
+        
+        # Create labels from JSON: iterate over keys and create with ai: prefix
+        echo "$LABELS_JSON" | jq -r 'to_entries[] | "\(.key)\t\(.value.color)\t\(.value.description)"' | while IFS=$'\t' read -r key color desc; do
+          gh label create "ai:${key}" --color "${color}" --description "${desc}" --repo "$REPO" --force || true
+        done
