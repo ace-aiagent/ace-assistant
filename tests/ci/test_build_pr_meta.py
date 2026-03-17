@@ -117,7 +117,7 @@ def test_build_pr_meta_contains_marker(
             str(output),
         ],
     )
-    assert "<!-- ai-pr-meta -->" in output.read_text(encoding="utf-8")
+    assert "<!-- ace-pr-meta -->" in output.read_text(encoding="utf-8")
 
 
 def test_build_pr_meta_contains_embedded_json_html_comment(

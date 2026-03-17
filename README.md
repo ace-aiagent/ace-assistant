@@ -17,11 +17,11 @@ Copy the 3 caller workflow templates from `templates/` to your repository's `.gi
 ```bash
 # From your business repository root
 curl -sL https://raw.githubusercontent.com/ORG/ace-assistant/v1/templates/caller-dispatch.yml \
-  -o .github/workflows/ai-dispatch.yml
+  -o .github/workflows/ace-dispatch.yml
 curl -sL https://raw.githubusercontent.com/ORG/ace-assistant/v1/templates/caller-fix.yml \
-  -o .github/workflows/ai-fix.yml
+  -o .github/workflows/ace-fix.yml
 curl -sL https://raw.githubusercontent.com/ORG/ace-assistant/v1/templates/caller-review.yml \
-  -o .github/workflows/ai-review.yml
+  -o .github/workflows/ace-review.yml
 ```
 
 ### 2. Replace placeholder
@@ -30,9 +30,9 @@ In all 3 workflow files, replace `ORG/ace-assistant` with the actual org/repo pa
 
 ```bash
 sed -i 's|ORG/ace-assistant|your-org/ace-assistant|g' \
-  .github/workflows/ai-dispatch.yml \
-  .github/workflows/ai-fix.yml \
-  .github/workflows/ai-review.yml
+  .github/workflows/ace-dispatch.yml \
+  .github/workflows/ace-fix.yml \
+  .github/workflows/ace-review.yml
 ```
 
 ### 3. Add configuration
@@ -78,11 +78,11 @@ Business Repo                          ace-assistant Repo
 ┌─────────────────┐                   ┌──────────────────────┐
 │ .github/        │                   │ .github/             │
 │   workflows/    │    workflow_call  │   workflows/         │
-│     ai-dispatch ├──────────────────►│     ai-dispatch.yml  │
-│     ai-fix      ├──────────────────►│     ai-fix.yml       │
-│     ai-review   ├──────────────────►│     ai-review.yml    │
+│     ace-dispatch ├──────────────────►│     ace-dispatch.yml  │
+│     ace-fix      ├──────────────────►│     ace-fix.yml       │
+│     ace-review   ├──────────────────►│     ace-review.yml    │
 │   ace-config.json                   │   actions/           │
-│                 │                   │     ai-worker-bootstrap/
+│                 │                   │     ace-worker-bootstrap/
 └─────────────────┘                   │     setup-opencode/  │
                                       │     configure-git/   │
                                       │     ...              │
@@ -96,7 +96,7 @@ Business Repo                          ace-assistant Repo
 
 ## Workflow Details
 
-### ai-dispatch (Reusable)
+### ace-dispatch (Reusable)
 
 Accepts serialized event data and performs:
 - **Issue triage**: AI analyzes the issue, classifies it, routes to fix
@@ -106,7 +106,7 @@ Accepts serialized event data and performs:
 
 **Outputs**: `route_to` (`fix` | `review` | `none`) and `route_params` (JSON)
 
-### ai-fix (Reusable)
+### ace-fix (Reusable)
 
 Performs AI-powered code fixes:
 1. Parses issue/PR context
@@ -115,7 +115,7 @@ Performs AI-powered code fixes:
 4. Commits changes and creates/updates PR
 5. Optionally dispatches review after fix
 
-### ai-review (Reusable)
+### ace-review (Reusable)
 
 Performs AI-powered PR review:
 1. Fetches PR diff and context
@@ -131,16 +131,16 @@ Caller workflows must declare these permissions:
 
 | Workflow | Permissions |
 |----------|-------------|
-| ai-dispatch | `contents: read`, `issues: write`, `pull-requests: write`, `actions: write` |
-| ai-fix | `contents: write`, `issues: write`, `pull-requests: write`, `actions: write` |
-| ai-review | `contents: read`, `issues: write`, `pull-requests: write`, `actions: write` |
+| ace-dispatch | `contents: read`, `issues: write`, `pull-requests: write`, `actions: write` |
+| ace-fix | `contents: write`, `issues: write`, `pull-requests: write`, `actions: write` |
+| ace-review | `contents: read`, `issues: write`, `pull-requests: write`, `actions: write` |
 
 ## Version Pinning
 
 Pin caller workflows to a major version tag:
 
 ```yaml
-uses: your-org/ace-assistant/.github/workflows/ai-fix.yml@v1
+uses: your-org/ace-assistant/.github/workflows/ace-fix.yml@v1
 ```
 
 This allows non-breaking updates (bug fixes, improvements) without changing caller workflows.
@@ -150,11 +150,11 @@ This allows non-breaking updates (bug fixes, improvements) without changing call
 ```
 .github/
   workflows/         # Reusable workflows (workflow_call)
-    ai-dispatch.yml  # Issue triage + event routing
-    ai-fix.yml       # AI code fixing
-    ai-review.yml    # AI PR review
+    ace-dispatch.yml  # Issue triage + event routing
+    ace-fix.yml       # AI code fixing
+    ace-review.yml    # AI PR review
   actions/           # Composite actions
-    ai-worker-bootstrap/  # Dual checkout + environment setup
+    ace-worker-bootstrap/  # Dual checkout + environment setup
     setup-opencode/       # OpenCode auth configuration
     configure-git/        # Git identity setup
     git-commit-push/      # Commit and push changes

@@ -18,9 +18,9 @@ def get_ai_workflow_files() -> list[Path]:
     workflow_dir = root / ".github" / "workflows"
     return sorted(
         [
-            workflow_dir / "ai-dispatch.yml",
-            workflow_dir / "ai-fix.yml",
-            workflow_dir / "ai-review.yml",
+            workflow_dir / "ace-dispatch.yml",
+            workflow_dir / "ace-fix.yml",
+            workflow_dir / "ace-review.yml",
         ]
     )
 
@@ -187,7 +187,7 @@ class TestYamlWorkflowValidation:
     def test_ai_fix_cleanup_files_do_not_remove_tracked_actions_or_scripts(
         self,
     ) -> None:
-        workflow_file = get_project_root() / ".github" / "workflows" / "ai-fix.yml"
+        workflow_file = get_project_root() / ".github" / "workflows" / "ace-fix.yml"
 
         with open(workflow_file, encoding="utf-8") as f:
             data = yaml.safe_load(f)

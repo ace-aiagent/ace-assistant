@@ -92,16 +92,16 @@ def _full_config_payload() -> dict[str, Any]:
         },
         "workflow_validation": {
             "required_inputs": {
-                "ai-dispatch.yml": ["target_type", "target_number", "action"],
-                "ai-fix.yml": ["target_type", "target_number", "auto_loop", "extra_prompt", "triage_json"],
-                "ai-review.yml": ["pr_number", "auto_loop", "extra_prompt"],
+                "ace-dispatch.yml": ["target_type", "target_number", "action"],
+                "ace-fix.yml": ["target_type", "target_number", "auto_loop", "extra_prompt", "triage_json"],
+                "ace-review.yml": ["pr_number", "auto_loop", "extra_prompt"],
             },
             "expected_concurrency_prefixes": {
-                "ai-dispatch.yml": "ai-dispatch-",
-                "ai-fix.yml": "ai-fix-",
-                "ai-review.yml": "ai-review-",
+                "ace-dispatch.yml": "ace-dispatch-",
+                "ace-fix.yml": "ace-fix-",
+                "ace-review.yml": "ace-review-",
             },
-            "required_markers": ["ai-pr-meta", "ai-review-context"],
+            "required_markers": ["ace-pr-meta", "ace-review-context"],
         },
         "chatops": {
             "command_prefix": "ace",
@@ -118,7 +118,7 @@ def test_load_full_config_success(write_json: Callable[[str, Any], Path]) -> Non
     assert config.bot.email == "ace-uai[bot]@users.noreply.github.com"
     assert config.branch.detection_patterns == ["ace/*", "fix/*", "issue-*"]
     assert config.labels["triaging"].color == "1D76DB"
-    assert config.workflow_validation.required_markers == ["ai-pr-meta", "ai-review-context"]
+    assert config.workflow_validation.required_markers == ["ace-pr-meta", "ace-review-context"]
 
 
 def test_missing_config_file_returns_defaults(tmp_path: Path) -> None:

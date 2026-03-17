@@ -33,7 +33,7 @@ def _build_initial_payload(auto_loop: bool = True, config_path: str | None = Non
 def _render_initial(payload: dict[str, Any]) -> str:
     payload_json = json.dumps(payload, ensure_ascii=False)
     lines = [
-        "<!-- ai-pr-meta -->",
+        "<!-- ace-pr-meta -->",
         f"<!-- {payload_json} -->",
         "**Ace PR Metadata**",
         "",
@@ -54,7 +54,7 @@ def _render_update(payload: dict[str, Any]) -> str:
     source_issue_text = f"#{source_issue}" if source_issue is not None else "N/A"
 
     lines = [
-        "<!-- ai-pr-meta -->",
+        "<!-- ace-pr-meta -->",
         f"<!-- {payload_json} -->",
         "**Ace PR Metadata**",
         "",

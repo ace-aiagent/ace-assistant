@@ -6,7 +6,7 @@ description: >
 
 inputs:
   marker:
-    description: Marker name for identifying the comment (e.g. ai-pr-meta)
+    description: Marker name for identifying the comment (e.g. ace-pr-meta)
     required: true
   body-file:
     description: Path to the file containing the comment body

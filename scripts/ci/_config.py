@@ -61,19 +61,19 @@ class ErrorRecoveryConfig:
 class WorkflowValidationConfig:
     required_inputs: dict[str, list[str]] = field(
         default_factory=lambda: {
-            "ai-dispatch.yml": ["target_type", "target_number", "action"],
-            "ai-fix.yml": ["target_type", "target_number", "auto_loop", "extra_prompt", "triage_json"],
-            "ai-review.yml": ["pr_number", "auto_loop", "extra_prompt"],
+            "ace-dispatch.yml": ["target_type", "target_number", "action"],
+            "ace-fix.yml": ["target_type", "target_number", "auto_loop", "extra_prompt", "triage_json"],
+            "ace-review.yml": ["pr_number", "auto_loop", "extra_prompt"],
         }
     )
     expected_concurrency_prefixes: dict[str, str] = field(
         default_factory=lambda: {
-            "ai-dispatch.yml": "ai-dispatch-",
-            "ai-fix.yml": "ai-fix-",
-            "ai-review.yml": "ai-review-",
+            "ace-dispatch.yml": "ace-dispatch-",
+            "ace-fix.yml": "ace-fix-",
+            "ace-review.yml": "ace-review-",
         }
     )
-    required_markers: list[str] = field(default_factory=lambda: ["ai-pr-meta", "ai-review-context"])
+    required_markers: list[str] = field(default_factory=lambda: ["ace-pr-meta", "ace-review-context"])
 
 
 @dataclass(frozen=True)

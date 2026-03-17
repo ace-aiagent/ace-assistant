@@ -67,9 +67,9 @@ class Test_find_marker_line_end:
                 id="marker_on_third_line",
             ),
             pytest.param(
-                "<!-- ai-pr-meta -->\n",
-                "ai-pr-meta",
-                19,
+                "<!-- ace-pr-meta -->\n",
+                "ace-pr-meta",
+                20,
                 id="ai_pr_meta_marker",
             ),
             pytest.param(
@@ -127,8 +127,8 @@ class Test_contains_marker_line:
                 id="indented_marker_returns_true",
             ),
             pytest.param(
-                "<!-- ai-pr-meta -->\ndata",
-                "ai-pr-meta",
+                "<!-- ace-pr-meta -->\ndata",
+                "ace-pr-meta",
                 True,
                 id="ai_pr_meta_marker_returns_true",
             ),

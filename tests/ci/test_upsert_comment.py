@@ -22,10 +22,10 @@ def test_upsert_comment_patches_when_existing_comment_found(monkeypatch, write_j
     comments_file = write_json(
         "comments.json",
         [
-            {"id": 99, "body": "<!-- ai-pr-meta -->\nold"},
+            {"id": 99, "body": "<!-- ace-pr-meta -->\nold"},
         ],
     )
-    body_file = write_text("body.md", "<!-- ai-pr-meta -->\nnew")
+    body_file = write_text("body.md", "<!-- ace-pr-meta -->\nnew")
     calls: list[list[str]] = []
 
     def _fake_run(cmd, *args, **kwargs):
@@ -44,7 +44,7 @@ def test_upsert_comment_patches_when_existing_comment_found(monkeypatch, write_j
             "--comments-file",
             str(comments_file),
             "--marker",
-            "ai-pr-meta",
+            "ace-pr-meta",
             "--body-file",
             str(body_file),
         ],
@@ -55,7 +55,7 @@ def test_upsert_comment_patches_when_existing_comment_found(monkeypatch, write_j
 
 def test_upsert_comment_posts_when_no_existing_comment(monkeypatch, write_json, write_text) -> None:
     comments_file = write_json("comments.json", [{"id": 1, "body": "other"}])
-    body_file = write_text("body.md", "<!-- ai-pr-meta -->\nnew")
+    body_file = write_text("body.md", "<!-- ace-pr-meta -->\nnew")
     calls: list[list[str]] = []
 
     def _fake_run(cmd, *args, **kwargs):
@@ -74,7 +74,7 @@ def test_upsert_comment_posts_when_no_existing_comment(monkeypatch, write_json, 
             "--comments-file",
             str(comments_file),
             "--marker",
-            "ai-pr-meta",
+            "ace-pr-meta",
             "--body-file",
             str(body_file),
         ],
@@ -86,9 +86,9 @@ def test_upsert_comment_posts_when_no_existing_comment(monkeypatch, write_json, 
 def test_upsert_comment_ignores_inline_marker_text_and_posts(monkeypatch, write_json, write_text) -> None:
     comments_file = write_json(
         "comments.json",
-        [{"id": 99, "body": "inline <!-- ai-pr-meta --> marker"}],
+        [{"id": 99, "body": "inline <!-- ace-pr-meta --> marker"}],
     )
-    body_file = write_text("body.md", "<!-- ai-pr-meta -->\nnew")
+    body_file = write_text("body.md", "<!-- ace-pr-meta -->\nnew")
     calls: list[list[str]] = []
 
     def _fake_run(cmd, *args, **kwargs):
@@ -107,7 +107,7 @@ def test_upsert_comment_ignores_inline_marker_text_and_posts(monkeypatch, write_
             "--comments-file",
             str(comments_file),
             "--marker",
-            "ai-pr-meta",
+            "ace-pr-meta",
             "--body-file",
             str(body_file),
         ],
@@ -119,9 +119,9 @@ def test_upsert_comment_ignores_inline_marker_text_and_posts(monkeypatch, write_
 def test_upsert_comment_accepts_indented_marker_line_and_patches(monkeypatch, write_json, write_text) -> None:
     comments_file = write_json(
         "comments.json",
-        [{"id": 99, "body": "   <!--   ai-pr-meta   -->\nold"}],
+        [{"id": 99, "body": "   <!--   ace-pr-meta   -->\nold"}],
     )
-    body_file = write_text("body.md", "<!-- ai-pr-meta -->\nnew")
+    body_file = write_text("body.md", "<!-- ace-pr-meta -->\nnew")
     calls: list[list[str]] = []
 
     def _fake_run(cmd, *args, **kwargs):
@@ -140,7 +140,7 @@ def test_upsert_comment_accepts_indented_marker_line_and_patches(monkeypatch, wr
             "--comments-file",
             str(comments_file),
             "--marker",
-            "ai-pr-meta",
+            "ace-pr-meta",
             "--body-file",
             str(body_file),
         ],

@@ -15,85 +15,85 @@ def _run_main(monkeypatch: pytest.MonkeyPatch, args: list[str]) -> None:
 
 def test_extract_json_from_body_reads_json_in_html_comment_after_marker() -> None:
     body = """intro
-<!-- ai-pr-meta -->
+<!-- ace-pr-meta -->
 
 <!-- {"ok": true} -->
 """
-    result = extract_marker_comment.extract_json_from_body(body, "ai-pr-meta")
+    result = extract_marker_comment.extract_json_from_body(body, "ace-pr-meta")
     assert result == {"ok": True}
 
 
 def test_extract_json_from_body_reads_json_in_html_comment_code_format() -> None:
-    body = """<!-- ai-pr-meta -->
+    body = """<!-- ace-pr-meta -->
 <!-- {"k": "v"} -->
 """
-    result = extract_marker_comment.extract_json_from_body(body, "ai-pr-meta")
+    result = extract_marker_comment.extract_json_from_body(body, "ace-pr-meta")
     assert result == {"k": "v"}
 
 
 def test_extract_json_from_body_reads_complex_json_in_html_comment() -> None:
-    body = """<!-- ai-pr-meta -->
+    body = """<!-- ace-pr-meta -->
 <!-- {"a": 1, "b": 2} -->
 """
-    result = extract_marker_comment.extract_json_from_body(body, "ai-pr-meta")
+    result = extract_marker_comment.extract_json_from_body(body, "ace-pr-meta")
     assert result == {"a": 1, "b": 2}
 
 
 def test_extract_json_from_body_handles_multiline_json_in_html_comment() -> None:
-    body = """<!-- ai-pr-meta -->
+    body = """<!-- ace-pr-meta -->
 <!-- {"x": 42, "y": [1, 2]} -->
 """
-    result = extract_marker_comment.extract_json_from_body(body, "ai-pr-meta")
+    result = extract_marker_comment.extract_json_from_body(body, "ace-pr-meta")
     assert result == {"x": 42, "y": [1, 2]}
 
 
 def test_extract_json_from_body_uses_content_after_specified_marker_only() -> None:
     body = """<!-- other -->
 <!-- {"bad": true} -->
-<!-- ai-pr-meta -->
+<!-- ace-pr-meta -->
 <!-- {"good": true} -->
 """
-    result = extract_marker_comment.extract_json_from_body(body, "ai-pr-meta")
+    result = extract_marker_comment.extract_json_from_body(body, "ace-pr-meta")
     assert result == {"good": True}
 
 
 def test_extract_json_from_body_raises_when_marker_missing() -> None:
     with pytest.raises(ValueError, match="marker not found"):
-        extract_marker_comment.extract_json_from_body("hello", "ai-pr-meta")
+        extract_marker_comment.extract_json_from_body("hello", "ace-pr-meta")
 
 
 def test_extract_json_from_body_raises_when_marker_is_inline_text() -> None:
-    body = "prefix <!-- ai-pr-meta --> suffix\n<!-- {\"ok\": true} -->"
+    body = "prefix <!-- ace-pr-meta --> suffix\n<!-- {\"ok\": true} -->"
     with pytest.raises(ValueError, match="marker not found"):
-        extract_marker_comment.extract_json_from_body(body, "ai-pr-meta")
+        extract_marker_comment.extract_json_from_body(body, "ace-pr-meta")
 
 
 def test_extract_json_from_body_accepts_indented_marker_line() -> None:
-    body = "  <!--   ai-pr-meta   -->\n<!--   {\"ok\": true}   -->\n"
-    result = extract_marker_comment.extract_json_from_body(body, "ai-pr-meta")
+    body = "  <!--   ace-pr-meta   -->\n<!--   {\"ok\": true}   -->\n"
+    result = extract_marker_comment.extract_json_from_body(body, "ace-pr-meta")
     assert result == {"ok": True}
 
 
 def test_extract_json_from_body_raises_when_no_json_payload_exists() -> None:
-    body = """<!-- ai-pr-meta -->
+    body = """<!-- ace-pr-meta -->
 not json here
 still not json
 """
     with pytest.raises(ValueError, match="no json payload"):
-        extract_marker_comment.extract_json_from_body(body, "ai-pr-meta")
+        extract_marker_comment.extract_json_from_body(body, "ace-pr-meta")
 
 
 def test_extract_json_from_body_raises_on_malformed_json_in_html_comment() -> None:
-    body = """<!-- ai-pr-meta -->
+    body = """<!-- ace-pr-meta -->
 <!-- {"also": } -->
 """
     with pytest.raises(ValueError, match="no json payload"):
-        extract_marker_comment.extract_json_from_body(body, "ai-pr-meta")
+        extract_marker_comment.extract_json_from_body(body, "ace-pr-meta")
 
 
 def test_extract_json_from_body_raises_for_empty_body() -> None:
     with pytest.raises(ValueError, match="marker not found"):
-        extract_marker_comment.extract_json_from_body("", "ai-pr-meta")
+        extract_marker_comment.extract_json_from_body("", "ace-pr-meta")
 
 
 def test_main_field_id_returns_comment_id(
@@ -101,10 +101,10 @@ def test_main_field_id_returns_comment_id(
     capsys: pytest.CaptureFixture[str],
     write_json,
 ) -> None:
-    comments_file = write_json("comments.json", [{"id": 123, "body": "<!-- ai-pr-meta -->\n<!-- {} -->"}])
+    comments_file = write_json("comments.json", [{"id": 123, "body": "<!-- ace-pr-meta -->\n<!-- {} -->"}])
     _run_main(
         monkeypatch,
-        ["--comments-file", str(comments_file), "--marker", "ai-pr-meta", "--field", "id"],
+        ["--comments-file", str(comments_file), "--marker", "ace-pr-meta", "--field", "id"],
     )
     assert capsys.readouterr().out.strip() == "123"
 
@@ -116,11 +116,11 @@ def test_main_field_json_returns_parsed_json(
 ) -> None:
     comments_file = write_json(
         "comments.json",
-        [{"id": 1, "body": "<!-- ai-pr-meta -->\n<!-- {\"foo\": \"bar\"} -->"}],
+        [{"id": 1, "body": "<!-- ace-pr-meta -->\n<!-- {\"foo\": \"bar\"} -->"}],
     )
     _run_main(
         monkeypatch,
-        ["--comments-file", str(comments_file), "--marker", "ai-pr-meta", "--field", "json"],
+        ["--comments-file", str(comments_file), "--marker", "ace-pr-meta", "--field", "json"],
     )
     assert json.loads(capsys.readouterr().out) == {"foo": "bar"}
 
@@ -130,11 +130,11 @@ def test_main_field_body_returns_comment_body(
     capsys: pytest.CaptureFixture[str],
     write_json,
 ) -> None:
-    body = "<!-- ai-pr-meta -->\n<!-- {} -->"
+    body = "<!-- ace-pr-meta -->\n<!-- {} -->"
     comments_file = write_json("comments.json", [{"id": 1, "body": body}])
     _run_main(
         monkeypatch,
-        ["--comments-file", str(comments_file), "--marker", "ai-pr-meta", "--field", "body"],
+        ["--comments-file", str(comments_file), "--marker", "ace-pr-meta", "--field", "body"],
     )
     assert capsys.readouterr().out.strip() == body
 
@@ -147,7 +147,7 @@ def test_main_no_matching_comment_raises_system_exit(
 ) -> None:
     comments_file = write_json("comments.json", [{"id": 1, "body": "nothing"}])
     with pytest.raises(SystemExit) as exc_info:
-        _run_main(monkeypatch, ["--comments-file", str(comments_file), "--marker", "ai-pr-meta", "--field", field])
+        _run_main(monkeypatch, ["--comments-file", str(comments_file), "--marker", "ace-pr-meta", "--field", field])
     assert exc_info.value.code == 1
 
 
@@ -159,13 +159,13 @@ def test_main_multiple_comments_returns_last_matching_one(
     comments_file = write_json(
         "comments.json",
         [
-            {"id": 1, "body": "<!-- ai-pr-meta -->\n<!-- {\"v\": 1} -->"},
-            {"id": 2, "body": "<!-- ai-pr-meta -->\n<!-- {\"v\": 2} -->"},
+            {"id": 1, "body": "<!-- ace-pr-meta -->\n<!-- {\"v\": 1} -->"},
+            {"id": 2, "body": "<!-- ace-pr-meta -->\n<!-- {\"v\": 2} -->"},
         ],
     )
     _run_main(
         monkeypatch,
-        ["--comments-file", str(comments_file), "--marker", "ai-pr-meta", "--field", "id"],
+        ["--comments-file", str(comments_file), "--marker", "ace-pr-meta", "--field", "id"],
     )
     assert capsys.readouterr().out.strip() == "2"
 
@@ -176,12 +176,12 @@ def test_main_ignores_inline_marker_text_and_raises_system_exit(
 ) -> None:
     comments_file = write_json(
         "comments.json",
-        [{"id": 1, "body": "contains <!-- ai-pr-meta --> inline only"}],
+        [{"id": 1, "body": "contains <!-- ace-pr-meta --> inline only"}],
     )
     with pytest.raises(SystemExit) as exc_info:
         _run_main(
             monkeypatch,
-            ["--comments-file", str(comments_file), "--marker", "ai-pr-meta", "--field", "id"],
+            ["--comments-file", str(comments_file), "--marker", "ace-pr-meta", "--field", "id"],
         )
     assert exc_info.value.code == 1
 
@@ -190,11 +190,11 @@ def test_main_field_json_raises_system_exit_when_json_is_invalid(
     monkeypatch: pytest.MonkeyPatch,
     write_json,
 ) -> None:
-    comments_file = write_json("comments.json", [{"id": 1, "body": "<!-- ai-pr-meta -->\n<!-- {broken} -->"}])
+    comments_file = write_json("comments.json", [{"id": 1, "body": "<!-- ace-pr-meta -->\n<!-- {broken} -->"}])
     with pytest.raises(SystemExit) as exc_info:
         _run_main(
             monkeypatch,
-            ["--comments-file", str(comments_file), "--marker", "ai-pr-meta", "--field", "json"],
+            ["--comments-file", str(comments_file), "--marker", "ace-pr-meta", "--field", "json"],
         )
     assert exc_info.value.code == 1
 

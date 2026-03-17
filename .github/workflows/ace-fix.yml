@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       auto_loop:
-        description: 'Whether to auto dispatch ai-review after fix'
+        description: 'Whether to auto dispatch ace-review after fix'
         required: false
         type: string
         default: "true"
@@ -42,7 +42,7 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}/.ace-assistant
     steps:
       - name: Bootstrap AI worker
-        uses: ace0-uai/ace-assistant/.github/actions/ai-worker-bootstrap@v1
+        uses: ace0-uai/ace-assistant/.github/actions/ace-worker-bootstrap@v1
         with:
           opencode-auth-b64: ${{ secrets.OPENCODE_AUTH_JSON_B64 }}
       - name: Fetch issue JSON
@@ -239,7 +239,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
-          marker: ai-pr-meta
+          marker: ace-pr-meta
           body-file: pr_meta_comment.md
           repo: ${{ github.repository }}
           issue-number: ${{ steps.create_issue_pr.outputs.pr_number }}
@@ -260,7 +260,7 @@ jobs:
           PR_NUMBER: ${{ steps.create_issue_pr.outputs.pr_number }}
         shell: bash
         run: |
-          set -euo pipefail; gh workflow run ai-review.yml             --ref "${{ github.event.repository.default_branch }}"             -f pr_number="$PR_NUMBER"             -f auto_loop="${{ inputs.auto_loop }}"             -f extra_prompt=""
+          set -euo pipefail; gh workflow run ace-review.yml             --ref "${{ github.event.repository.default_branch }}"             -f pr_number="$PR_NUMBER"             -f auto_loop="${{ inputs.auto_loop }}"             -f extra_prompt=""
       - name: Hint for manual review on issue PR
         if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG' && steps.issue_diff_check.outputs.has_changes == 'true' && inputs.auto_loop != 'true'
         env:
@@ -283,7 +283,7 @@ jobs:
         if: inputs.target_type == 'pr'
         shell: bash
         run: |
-          set -euo pipefail; python -m scripts.ci.extract_marker_comment             --comments-file pr_comments.json             --marker ai-pr-meta             --field json > pr_meta.json; python -m scripts.ci.extract_marker_comment             --comments-file pr_comments.json             --marker ai-review-context             --field json > review_context.json; cp pr_meta.json pr_meta_before_fix.json
+          set -euo pipefail; python -m scripts.ci.extract_marker_comment             --comments-file pr_comments.json             --marker ace-pr-meta             --field json > pr_meta.json; python -m scripts.ci.extract_marker_comment             --comments-file pr_comments.json             --marker ace-review-context             --field json > review_context.json; cp pr_meta.json pr_meta_before_fix.json
       - name: Force reset PR meta and labels
         if: inputs.target_type == 'pr' && inputs.force == 'true'
         env:
@@ -320,7 +320,7 @@ jobs:
 
           python -m scripts.ci.upsert_comment \
             --comments-file pr_comments.json \
-            --marker ai-pr-meta \
+            --marker ace-pr-meta \
             --body-file pr_meta_comment.md \
             --repo "$REPO" \
             --issue-number "$PR_NUMBER"
@@ -382,7 +382,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
-          marker: ai-pr-meta
+          marker: ace-pr-meta
           body-file: pr_meta_comment.md
           repo: ${{ github.repository }}
           issue-number: ${{ inputs.target_number }}
@@ -454,7 +454,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
-          marker: ai-pr-meta
+          marker: ace-pr-meta
           body-file: pr_meta_comment.md
           repo: ${{ github.repository }}
           issue-number: ${{ inputs.target_number }}
@@ -466,7 +466,7 @@ jobs:
           PR_NUMBER: ${{ inputs.target_number }}
         shell: bash
         run: |
-          set -euo pipefail; gh workflow run ai-review.yml             --ref "${{ github.event.repository.default_branch }}"             -f pr_number="$PR_NUMBER"             -f auto_loop="${{ inputs.auto_loop }}"             -f extra_prompt=""
+          set -euo pipefail; gh workflow run ace-review.yml             --ref "${{ github.event.repository.default_branch }}"             -f pr_number="$PR_NUMBER"             -f auto_loop="${{ inputs.auto_loop }}"             -f extra_prompt=""
       - name: Hint for manual review on PR retry
         if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true' && steps.pr_diff_check.outputs.has_changes == 'true' && inputs.auto_loop != 'true'
         env:
@@ -490,7 +490,7 @@ jobs:
             echo '{}' > pr_meta_before_fix.json
           fi
           gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate > pr_comments_rollback.json || true
-          python -m scripts.ci.extract_marker_comment --comments-file pr_comments_rollback.json --marker ai-pr-meta --field json > pr_meta_current_for_rollback.json || echo '{}' > pr_meta_current_for_rollback.json
+          python -m scripts.ci.extract_marker_comment --comments-file pr_comments_rollback.json --marker ace-pr-meta --field json > pr_meta_current_for_rollback.json || echo '{}' > pr_meta_current_for_rollback.json
           current_lock_owner="$(jq -r '.lock_owner // ""' pr_meta_current_for_rollback.json)"
           if [[ "$current_lock_owner" != "$LOCK_OWNER" ]]; then
             echo "Skip rollback because lock owner changed: current=$current_lock_owner expected=$LOCK_OWNER"
@@ -524,7 +524,7 @@ jobs:
 
           python -m scripts.ci.upsert_comment \
             --comments-file pr_comments_rollback.json \
-            --marker ai-pr-meta \
+            --marker ace-pr-meta \
             --body-file pr_meta_comment.md \
             --repo "$REPO" \
             --issue-number "$PR_NUMBER" || true

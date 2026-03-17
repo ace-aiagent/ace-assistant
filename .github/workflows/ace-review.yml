@@ -43,7 +43,7 @@ jobs:
       fix_params: ${{ steps.set_outputs.outputs.fix_params }}
     steps:
       - name: Bootstrap AI worker
-        uses: ace0-uai/ace-assistant/.github/actions/ai-worker-bootstrap@v1
+        uses: ace0-uai/ace-assistant/.github/actions/ace-worker-bootstrap@v1
         with:
           opencode-auth-b64: ${{ secrets.OPENCODE_AUTH_JSON_B64 }}
       - name: Load error recovery config
@@ -69,7 +69,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m scripts.ci.extract_marker_comment --comments-file pr_comments.json --marker ai-pr-meta --field json > pr_meta_force_reset.json
+          python -m scripts.ci.extract_marker_comment --comments-file pr_comments.json --marker ace-pr-meta --field json > pr_meta_force_reset.json
 
           python -m scripts.ci.update_pr_meta_json \
             --meta-file pr_meta_force_reset.json \
@@ -92,7 +92,7 @@ jobs:
 
           python -m scripts.ci.upsert_comment \
             --comments-file pr_comments.json \
-            --marker ai-pr-meta \
+            --marker ace-pr-meta \
             --body-file pr_meta_comment.md \
             --repo "$REPO" \
             --issue-number "$PR_NUMBER"
@@ -117,9 +117,9 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$FORCE_REVIEW" != "true" || ! -f pr_meta.json ]]; then
-            marker_regex='^[[:space:]]*<!--[[:space:]]*ai-pr-meta[[:space:]]*-->[[:space:]]*$'
+            marker_regex='^[[:space:]]*<!--[[:space:]]*ace-pr-meta[[:space:]]*-->[[:space:]]*$'
             if jq -e --arg re "$marker_regex" 'map(.body // "") | any(test($re; "m"))' pr_comments.json > /dev/null; then
-              python -m scripts.ci.extract_marker_comment --comments-file pr_comments.json --marker ai-pr-meta --field json > pr_meta.json || echo '{}' > pr_meta.json
+              python -m scripts.ci.extract_marker_comment --comments-file pr_comments.json --marker ace-pr-meta --field json > pr_meta.json || echo '{}' > pr_meta.json
             else
               echo '{}' > pr_meta.json
             fi
@@ -144,7 +144,7 @@ jobs:
         if: steps.guard.outputs.should_exit != 'true'
         uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
-          marker: ai-pr-meta
+          marker: ace-pr-meta
           body-file: pr_meta_comment.md
           repo: ${{ github.repository }}
           issue-number: ${{ inputs.pr_number }}
@@ -220,7 +220,7 @@ jobs:
           set -euo pipefail
           python -m scripts.ci.build_review_context --result-file review_result.json --output review_context_comment.md
           gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate > pr_comments.json
-          python -m scripts.ci.upsert_comment --comments-file pr_comments.json --marker ai-review-context --body-file review_context_comment.md --repo "$REPO" --issue-number "$PR_NUMBER"
+          python -m scripts.ci.upsert_comment --comments-file pr_comments.json --marker ace-review-context --body-file review_context_comment.md --repo "$REPO" --issue-number "$PR_NUMBER"
       - name: Submit approval and finalize meta
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'APPROVED'
         env:
@@ -240,7 +240,7 @@ jobs:
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'APPROVED'
         uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
-          marker: ai-pr-meta
+          marker: ace-pr-meta
           body-file: pr_meta_comment.md
           repo: ${{ github.repository }}
           issue-number: ${{ inputs.pr_number }}
@@ -289,7 +289,7 @@ jobs:
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry != 'true'
         uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
-          marker: ai-pr-meta
+          marker: ace-pr-meta
           body-file: pr_meta_comment.md
           repo: ${{ github.repository }}
           issue-number: ${{ inputs.pr_number }}
@@ -306,8 +306,8 @@ jobs:
           pr-number: ${{ inputs.pr_number }}
           repo: ${{ github.repository }}
           gh-token: ${{ github.token }}
-          comment-body: Maximum consecutive failures (${{ steps.load_error_config.outputs.max_failures }}) reached. Skipping ai-fix dispatch. Please review manually.
-      - name: Update meta and dispatch ai-fix workflow
+          comment-body: Maximum consecutive failures (${{ steps.load_error_config.outputs.max_failures }}) reached. Skipping ace-fix dispatch. Please review manually.
+      - name: Update meta and dispatch ace-fix workflow
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -325,7 +325,7 @@ jobs:
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
         uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
-          marker: ai-pr-meta
+          marker: ace-pr-meta
           body-file: pr_meta_comment.md
           repo: ${{ github.repository }}
           issue-number: ${{ inputs.pr_number }}
@@ -352,7 +352,7 @@ jobs:
             echo "needs_fix=false" >> "$GITHUB_OUTPUT"
             echo "fix_params={}" >> "$GITHUB_OUTPUT"
           fi
-      - name: Dispatch ai-fix workflow
+      - name: Dispatch ace-fix workflow
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -361,7 +361,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh workflow run ai-fix.yml --ref "${{ github.event.repository.default_branch }}" -f target_type=pr -f target_number="$PR_NUMBER" -f auto_loop=true -f extra_prompt=""
+          gh workflow run ace-fix.yml --ref "${{ github.event.repository.default_branch }}" -f target_type=pr -f target_number="$PR_NUMBER" -f auto_loop=true -f extra_prompt=""
       - name: Manual mode finalize meta only
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop != 'true'
         env:
@@ -379,7 +379,7 @@ jobs:
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop != 'true'
         uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
-          marker: ai-pr-meta
+          marker: ace-pr-meta
           body-file: pr_meta_comment.md
           repo: ${{ github.repository }}
           issue-number: ${{ inputs.pr_number }}
@@ -403,7 +403,7 @@ jobs:
           fi
 
           gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate > pr_comments_rollback.json || true
-          python -m scripts.ci.extract_marker_comment --comments-file pr_comments_rollback.json --marker ai-pr-meta --field json > pr_meta_current_for_rollback.json || echo '{}' > pr_meta_current_for_rollback.json
+          python -m scripts.ci.extract_marker_comment --comments-file pr_comments_rollback.json --marker ace-pr-meta --field json > pr_meta_current_for_rollback.json || echo '{}' > pr_meta_current_for_rollback.json
           current_lock_owner="$(jq -r '.lock_owner // ""' pr_meta_current_for_rollback.json)"
           if [[ "$current_lock_owner" != "$LOCK_OWNER" ]]; then
             echo "Skip rollback because lock owner changed: current=$current_lock_owner expected=$LOCK_OWNER"
@@ -437,7 +437,7 @@ jobs:
 
           python -m scripts.ci.upsert_comment \
             --comments-file pr_comments_rollback.json \
-            --marker ai-pr-meta \
+            --marker ace-pr-meta \
             --body-file pr_meta_comment.md \
             --repo "$REPO" \
             --issue-number "$PR_NUMBER" || true

@@ -18,7 +18,7 @@ def main() -> None:
     payload: dict[str, Any] = read_json(args.result_file)
     decision = str(payload.get("decision") or "UNKNOWN")
     body = (
-        "<!-- ai-review-context -->\n"
+        "<!-- ace-review-context -->\n"
         + f"Review context metadata (decision: {decision}).\n"
         + "<!-- "
         + json.dumps(payload, ensure_ascii=False)

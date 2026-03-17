@@ -1,4 +1,4 @@
-# Caller workflow for AI Dispatch — place in your repo's .github/workflows/ai-dispatch.yml
+# Caller workflow for AI Dispatch — place in your repo's .github/workflows/ace-dispatch.yml
 # Replace ORG/ace-assistant with your actual org/repo path for the ace-assistant repository.
 #
 # This caller handles event listening (issues, comments, PRs) and delegates the
@@ -49,7 +49,7 @@ permissions:
 
 concurrency:
   group: >-
-    ai-dispatch-${{
+    ace-dispatch-${{
       github.event.issue.number
       || github.event.pull_request.number
       || inputs.target_number
@@ -59,7 +59,7 @@ concurrency:
 
 jobs:
   dispatch:
-    uses: ORG/ace-assistant/.github/workflows/ai-dispatch.yml@v1
+    uses: ORG/ace-assistant/.github/workflows/ace-dispatch.yml@v1
     with:
       event_name: ${{ github.event_name }}
       target_type: ${{ inputs.target_type || '' }}
@@ -90,7 +90,7 @@ jobs:
           TRIAGE_JSON=$(echo "$ROUTE_PARAMS" | jq -r '.triage_json // ""')
           FORCE=$(echo "$ROUTE_PARAMS" | jq -r '.force // "false"')
 
-          gh workflow run ai-fix.yml \
+          gh workflow run ace-fix.yml \
             --repo "$REPO" \
             -f target_type="$TARGET_TYPE" \
             -f target_number="$TARGET_NUMBER" \
@@ -99,7 +99,7 @@ jobs:
             -f triage_json="$TRIAGE_JSON" \
             -f force="$FORCE"
 
-          echo "::notice::Dispatched ai-fix for $TARGET_TYPE #$TARGET_NUMBER"
+          echo "::notice::Dispatched ace-fix for $TARGET_TYPE #$TARGET_NUMBER"
 
   route-review:
     needs: dispatch
@@ -119,11 +119,11 @@ jobs:
           EXTRA_PROMPT=$(echo "$ROUTE_PARAMS" | jq -r '.extra_prompt // ""')
           FORCE=$(echo "$ROUTE_PARAMS" | jq -r '.force // "false"')
 
-          gh workflow run ai-review.yml \
+          gh workflow run ace-review.yml \
             --repo "$REPO" \
             -f pr_number="$PR_NUMBER" \
             -f auto_loop="$AUTO_LOOP" \
             -f extra_prompt="$EXTRA_PROMPT" \
             -f force="$FORCE"
 
-          echo "::notice::Dispatched ai-review for PR #$PR_NUMBER"
+          echo "::notice::Dispatched ace-review for PR #$PR_NUMBER"

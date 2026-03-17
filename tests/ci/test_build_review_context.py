@@ -16,7 +16,7 @@ def test_build_review_context_contains_marker(monkeypatch, tmp_path: Path, write
     review_file = write_json("review.json", {"decision": "APPROVED"})
     output = tmp_path / "review_context_comment.md"
     _run_main(monkeypatch, ["--result-file", str(review_file), "--output", str(output)])
-    assert "<!-- ai-review-context -->" in output.read_text(encoding="utf-8")
+    assert "<!-- ace-review-context -->" in output.read_text(encoding="utf-8")
 
 
 def test_build_review_context_contains_json_dump(monkeypatch, tmp_path: Path, write_json) -> None:
@@ -36,7 +36,7 @@ def test_build_review_context_hides_json_payload_from_visible_body(monkeypatch, 
     _run_main(monkeypatch, ["--result-file", str(review_file), "--output", str(output)])
 
     lines = output.read_text(encoding="utf-8").splitlines()
-    assert lines[0] == "<!-- ai-review-context -->"
+    assert lines[0] == "<!-- ace-review-context -->"
     assert lines[1] == "Review context metadata (decision: APPROVED)."
     assert lines[2].startswith("<!-- ") and lines[2].endswith(" -->")
 

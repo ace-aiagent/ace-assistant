@@ -1,4 +1,4 @@
-# Caller workflow for AI Review — place in your repo's .github/workflows/ai-review.yml
+# Caller workflow for AI Review — place in your repo's .github/workflows/ace-review.yml
 # Replace ORG/ace-assistant with your actual org/repo path for the ace-assistant repository.
 
 name: AI Review
@@ -33,12 +33,12 @@ permissions:
   actions: write
 
 concurrency:
-  group: ai-review-${{ inputs.pr_number }}
+  group: ace-review-${{ inputs.pr_number }}
   cancel-in-progress: false
 
 jobs:
   review:
-    uses: ORG/ace-assistant/.github/workflows/ai-review.yml@v1
+    uses: ORG/ace-assistant/.github/workflows/ace-review.yml@v1
     with:
       pr_number: ${{ inputs.pr_number }}
       auto_loop: ${{ inputs.auto_loop }}
@@ -63,7 +63,7 @@ jobs:
           TARGET_NUMBER=$(echo "$FIX_PARAMS" | jq -r '.target_number')
           EXTRA_PROMPT=$(echo "$FIX_PARAMS" | jq -r '.extra_prompt // ""')
 
-          gh workflow run ai-fix.yml \
+          gh workflow run ace-fix.yml \
             --repo "$REPO" \
             -f target_type="$TARGET_TYPE" \
             -f target_number="$TARGET_NUMBER" \
@@ -71,4 +71,4 @@ jobs:
             -f extra_prompt="$EXTRA_PROMPT" \
             -f force="false"
 
-          echo "::notice::Dispatched ai-fix for $TARGET_TYPE #$TARGET_NUMBER"
+          echo "::notice::Dispatched ace-fix for $TARGET_TYPE #$TARGET_NUMBER"
