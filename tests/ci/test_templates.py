@@ -53,11 +53,25 @@ class TestCallerDispatchTemplateRouteParamsSafety:
         template_path = get_project_root() / "templates" / "caller-dispatch.yml"
         content = template_path.read_text(encoding="utf-8")
 
+        # Check env var setup
         assert "ROUTE_PARAMS: ${{ needs.dispatch.outputs.route_params }}" in content
+        
+        # Check parsing variables
         assert "RAW_ROUTE_PARAMS=\"${ROUTE_PARAMS:-}\"" in content
         assert "SAFE_ROUTE_PARAMS='{}'" in content
-        assert "jq -r '.extra_prompt // \"\"' <<< \"$SAFE_ROUTE_PARAMS\"" in content
-        assert "jq -r '.pr_number // .target_number' <<< \"$SAFE_ROUTE_PARAMS\"" in content
+        assert "PARSE_OK=false" in content
+        
+        # Check 3-layer parsing logic
+        assert "jq -e 'type == \"object\"'" in content
+        assert "jq -e 'type == \"string\"'" in content
+        assert "DOUBLE_INNER=" in content
+        
+        # Check unified guard with error exit
+        assert "if [[ -z \"$PR_NUMBER\" ]]; then" in content
+        assert "if [[ -z \"$TARGET_NUMBER\" ]]; then" in content
+        assert "exit 1" in content
+        
+        # Check fromJSON is not used (we use manual parsing)
         assert "fromJSON(needs.dispatch.outputs.route_params)" not in content
 
 
@@ -67,8 +81,11 @@ class TestCallerReviewTemplateFixParamsSafety:
         content = template_path.read_text(encoding="utf-8")
 
         assert "FIX_PARAMS: ${{ needs.review.outputs.fix_params }}" in content
-        assert "TARGET_TYPE=\"$(jq -r '.target_type // \"pr\"' <<< \"$FIX_PARAMS\")\"" in content
-        assert "FIX_PARAMS='${{ needs.review.outputs.fix_params }}'" not in content
+        assert "RAW_FIX_PARAMS=" in content
+        assert "SAFE_FIX_PARAMS=" in content
+        assert "PARSE_OK=false" in content
+        assert "DOUBLE_INNER=" in content
+        assert "fromJSON(needs.review.outputs.fix_params)" not in content
 
 
 class TestAceConfigExampleJson:
