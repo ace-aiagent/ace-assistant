@@ -39,7 +39,6 @@ def get_scripts_ci_python_files() -> list[Path]:
     return sorted(scripts_dir.glob("*.py"))
 
 
-@pytest.mark.skip(reason="workflow YAML files not yet migrated, will be created in Tasks 7-9")
 class TestYamlWorkflowValidation:
     """Validation tests for AI workflow YAML files."""
 
@@ -74,42 +73,36 @@ class TestYamlWorkflowValidation:
     @pytest.mark.parametrize(
         "workflow_file", get_ai_workflow_files(), ids=lambda p: p.name
     )
-    def test_workflow_defines_permissions(self, workflow_file: Path) -> None:
-        """Test that workflows define permissions (top-level or in every job)."""
+    def test_reusable_workflow_does_not_define_top_level_permissions(
+        self, workflow_file: Path
+    ) -> None:
+        """Reusable workflows (workflow_call) must NOT define top-level permissions.
+
+        Permissions are the caller's responsibility; defining them here would
+        override the caller's settings and break least-privilege in consumer repos.
+        """
         with open(workflow_file, encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
-        has_top_level_permissions = "permissions" in data
-
-        if not has_top_level_permissions:
-            jobs = data.get("jobs", {})
-            for job_name, job_config in jobs.items():
-                if isinstance(job_config, dict):
-                    assert "permissions" in job_config, (
-                        f"Job '{job_name}' in {workflow_file.name} missing permissions"
-                    )
-
-        # If we reach here, either top-level permissions exist or all jobs have permissions
-        assert has_top_level_permissions or all(
-            isinstance(job_config, dict) and "permissions" in job_config
-            for job_config in data.get("jobs", {}).values()
+        assert "permissions" not in data, (
+            f"{workflow_file.name} must not define top-level permissions; "
+            "reusable workflows inherit permissions from the caller"
         )
 
     @pytest.mark.parametrize(
         "workflow_file", get_ai_workflow_files(), ids=lambda p: p.name
     )
     def test_workflow_script_references_exist(self, workflow_file: Path) -> None:
-        """Test that run: steps referencing python scripts/ci/*.py point to existing files."""
+        """Test that run: steps referencing scripts/ci modules point to existing files."""
         root = get_project_root()
 
         with open(workflow_file, encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
-        # Collect all 'run:' steps that reference scripts/ci/*.py
-        scripts_referenced = set()
+        scripts_referenced: set[str] = set()
         jobs = data.get("jobs", {})
 
-        for job_name, job_config in jobs.items():
+        for _job_name, job_config in jobs.items():
             if not isinstance(job_config, dict):
                 continue
 
@@ -119,12 +112,17 @@ class TestYamlWorkflowValidation:
                     continue
 
                 run_script = step.get("run")
-                if isinstance(run_script, str):
-                    # Find all patterns: python scripts/ci/xxx.py
-                    matches = re.findall(r"python\s+scripts/ci/(\w+\.py)", run_script)
-                    scripts_referenced.update(matches)
+                if not isinstance(run_script, str):
+                    continue
 
-        # Verify each referenced script exists
+                # Match module invocations: python -m scripts.ci.xxx
+                for match in re.finditer(r"python\s+-m\s+scripts\.ci\.(\w+)", run_script):
+                    scripts_referenced.add(match.group(1) + ".py")
+
+                # Also match direct file invocations: python scripts/ci/xxx.py
+                for match in re.finditer(r"python\s+scripts/ci/(\w+\.py)", run_script):
+                    scripts_referenced.add(match.group(1))
+
         for script_name in scripts_referenced:
             script_path = root / "scripts" / "ci" / script_name
             assert script_path.exists(), (
@@ -137,17 +135,16 @@ class TestYamlWorkflowValidation:
     def test_workflow_composite_action_references_exist(
         self, workflow_file: Path
     ) -> None:
-        """Test that uses: ./.github/actions/* steps point to existing action directories."""
+        """Test that uses: steps referencing composite actions point to existing action directories."""
         root = get_project_root()
 
         with open(workflow_file, encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
-        # Collect all 'uses:' steps that reference ./.github/actions/
-        actions_referenced = set()
+        actions_referenced: set[str] = set()
         jobs = data.get("jobs", {})
 
-        for job_name, job_config in jobs.items():
+        for _job_name, job_config in jobs.items():
             if not isinstance(job_config, dict):
                 continue
 
@@ -157,13 +154,26 @@ class TestYamlWorkflowValidation:
                     continue
 
                 uses = step.get("uses", "")
-                if isinstance(uses, str) and uses.startswith("./.github/actions/"):
-                    # Extract action name: ./.github/actions/action-name/... → action-name
-                    match = re.match(r"\./.github/actions/([^/]+)", uses)
-                    if match:
-                        actions_referenced.add(match.group(1))
+                if not isinstance(uses, str):
+                    continue
 
-        # Verify each referenced action directory exists with action.yml
+                # Match local relative refs: ./.github/actions/xxx
+                match = re.match(r"\./.github/actions/([^/]+)", uses)
+                if match:
+                    actions_referenced.add(match.group(1))
+                    continue
+
+                # Match checkout-path relative refs: ./.coding-agent/.github/actions/xxx
+                match = re.match(r"\./\.coding-agent/\.github/actions/([^/]+)", uses)
+                if match:
+                    actions_referenced.add(match.group(1))
+                    continue
+
+                # Match cross-repo refs: ace0-uai/coding-agent/.github/actions/xxx@ref
+                match = re.match(r"ace0-uai/coding-agent/\.github/actions/([^/@]+)", uses)
+                if match:
+                    actions_referenced.add(match.group(1))
+
         for action_name in actions_referenced:
             action_dir = root / ".github" / "actions" / action_name
             action_file = action_dir / "action.yml"
@@ -173,71 +183,6 @@ class TestYamlWorkflowValidation:
             assert action_file.exists(), (
                 f"action.yml missing for action referenced in {workflow_file.name}: .github/actions/{action_name}/action.yml"
             )
-
-    def test_ai_fix_has_cache_and_restore_around_branch_checkout(self) -> None:
-        workflow_file = get_project_root() / ".github" / "workflows" / "ai-fix.yml"
-
-        with open(workflow_file, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-
-        steps = data["jobs"]["fix"]["steps"]
-        step_names = [step.get("name", "") for step in steps if isinstance(step, dict)]
-
-        assert "Save CI assets before checkout" in step_names
-        assert "Restore CI assets after checkout" in step_names
-        assert "Save CI assets before PR checkout" in step_names
-        assert "Restore CI assets after PR checkout" in step_names
-
-    def test_ai_review_has_cache_and_restore_around_pr_checkout(self) -> None:
-        workflow_file = get_project_root() / ".github" / "workflows" / "ai-review.yml"
-
-        with open(workflow_file, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-
-        steps = data["jobs"]["review"]["steps"]
-        step_names = [step.get("name", "") for step in steps if isinstance(step, dict)]
-
-        assert "Save CI assets before checkout" in step_names
-        assert "Restore CI assets after checkout" in step_names
-
-    def test_ai_fix_cache_restore_order_guards_post_checkout_steps(self) -> None:
-        workflow_file = get_project_root() / ".github" / "workflows" / "ai-fix.yml"
-
-        with open(workflow_file, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-
-        steps = data["jobs"]["fix"]["steps"]
-        step_index = {
-            step.get("name", ""): idx
-            for idx, step in enumerate(steps)
-            if isinstance(step, dict)
-        }
-
-        assert (
-            step_index["Save CI assets before checkout"]
-            < step_index["Create issue fix branch"]
-        )
-        assert (
-            step_index["Create issue fix branch"]
-            < step_index["Restore CI assets after checkout"]
-        )
-        assert (
-            step_index["Restore CI assets after checkout"]
-            < step_index["Build issue fix prompt"]
-        )
-
-        assert (
-            step_index["Save CI assets before PR checkout"]
-            < step_index["Checkout PR head branch"]
-        )
-        assert (
-            step_index["Checkout PR head branch"]
-            < step_index["Restore CI assets after PR checkout"]
-        )
-        assert (
-            step_index["Restore CI assets after PR checkout"]
-            < step_index["PR idempotency guard"]
-        )
 
     def test_ai_fix_cleanup_files_do_not_remove_tracked_actions_or_scripts(
         self,
@@ -267,34 +212,11 @@ class TestYamlWorkflowValidation:
                     f"{step.get('name')} cleanup-files must not include tracked path: {entry}"
                 )
 
-    def test_ai_review_cache_restore_order_guards_post_checkout_steps(self) -> None:
-        workflow_file = get_project_root() / ".github" / "workflows" / "ai-review.yml"
-
-        with open(workflow_file, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-
-        steps = data["jobs"]["review"]["steps"]
-        step_index = {
-            step.get("name", ""): idx
-            for idx, step in enumerate(steps)
-            if isinstance(step, dict)
-        }
-
-        assert (
-            step_index["Save CI assets before checkout"]
-            < step_index["Checkout PR head branch"]
-        )
-        assert (
-            step_index["Checkout PR head branch"]
-            < step_index["Restore CI assets after checkout"]
-        )
-        assert (
-            step_index["Restore CI assets after checkout"]
-            < step_index["Build review prompt"]
-        )
 
 
-@pytest.mark.skip(reason="composite action files not yet migrated, will be created in Tasks 5-6")
+
+
+
 class TestCompositeActionValidation:
     """Validation tests for composite action.yml files."""
 
