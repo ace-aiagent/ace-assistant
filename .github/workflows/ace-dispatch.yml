@@ -312,7 +312,7 @@ jobs:
             echo "route_to=fix" >> "$GITHUB_OUTPUT"
             # Use jq to safely encode extra_prompt into JSON
             route_params="$(jq -n --arg tn "$issue_number" --arg ep "$extra_prompt" --arg f "$force" \
-              '{target_type:"pr",target_number:$tn,auto_loop:"false",force:$f,extra_prompt:$ep}')"
+              '{target_type:"pr",target_number:$tn,auto_loop:"false",force:$f,extra_prompt:$ep}' | jq -c .)"
             echo "route_params=$route_params" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -320,7 +320,7 @@ jobs:
           if [[ "$is_pr" == "true" && "$command" == "review" ]]; then
             echo "route_to=review" >> "$GITHUB_OUTPUT"
             route_params="$(jq -n --arg pn "$issue_number" --arg ep "$extra_prompt" --arg f "$force" \
-              '{pr_number:$pn,auto_loop:"false",force:$f,extra_prompt:$ep}')"
+              '{pr_number:$pn,auto_loop:"false",force:$f,extra_prompt:$ep}' | jq -c .)"
             echo "route_params=$route_params" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -328,7 +328,7 @@ jobs:
           # Issue fix
           echo "route_to=fix" >> "$GITHUB_OUTPUT"
           route_params="$(jq -n --arg tn "$issue_number" --arg ep "$extra_prompt" --arg f "$force" \
-            '{target_type:"issue",target_number:$tn,auto_loop:"false",force:$f,extra_prompt:$ep}')"
+            '{target_type:"issue",target_number:$tn,auto_loop:"false",force:$f,extra_prompt:$ep}' | jq -c .)"
           echo "route_params=$route_params" >> "$GITHUB_OUTPUT"
 
   # ─── Job: PR Event Dispatch ─────────────────────────────────────────
@@ -439,7 +439,7 @@ jobs:
           if [[ "$TARGET_TYPE" == "issue" && "$ACTION" == "fix" ]]; then
             echo "route_to=fix" >> "$GITHUB_OUTPUT"
             route_params="$(jq -n --arg tn "$TARGET_NUMBER" --arg ep "$EXTRA_PROMPT" --arg f "$FORCE" \
-              '{target_type:"issue",target_number:$tn,auto_loop:"true",force:$f,extra_prompt:$ep}')"
+              '{target_type:"issue",target_number:$tn,auto_loop:"true",force:$f,extra_prompt:$ep}' | jq -c .)"
             echo "route_params=$route_params" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -447,7 +447,7 @@ jobs:
           if [[ "$TARGET_TYPE" == "pr" && "$ACTION" == "fix" ]]; then
             echo "route_to=fix" >> "$GITHUB_OUTPUT"
             route_params="$(jq -n --arg tn "$TARGET_NUMBER" --arg ep "$EXTRA_PROMPT" --arg f "$FORCE" \
-              '{target_type:"pr",target_number:$tn,auto_loop:"true",force:$f,extra_prompt:$ep}')"
+              '{target_type:"pr",target_number:$tn,auto_loop:"true",force:$f,extra_prompt:$ep}' | jq -c .)"
             echo "route_params=$route_params" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -455,7 +455,7 @@ jobs:
           if [[ "$TARGET_TYPE" == "pr" && "$ACTION" == "review" ]]; then
             echo "route_to=review" >> "$GITHUB_OUTPUT"
             route_params="$(jq -n --arg tn "$TARGET_NUMBER" --arg ep "$EXTRA_PROMPT" --arg f "$FORCE" \
-              '{pr_number:$tn,auto_loop:"true",force:$f,extra_prompt:$ep}')"
+              '{pr_number:$tn,auto_loop:"true",force:$f,extra_prompt:$ep}' | jq -c .)"
             echo "route_params=$route_params" >> "$GITHUB_OUTPUT"
             exit 0
           fi
