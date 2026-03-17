@@ -1,3 +1,12 @@
+# 项目概要
+
+`ace-assistant` 是一套可复用的 GitHub Actions AI 工作流模板，用于在业务仓库中实现自动化 **Issue 分诊、代码修复与 PR 审查**。
+
+核心形态：
+- 业务仓库通过 caller workflow 接入；
+- `ace-assistant` 仓库提供可复用 workflow、composite actions 与 CI 脚本；
+- 通过统一配置（`ace-config.json`）与密钥，实现可复制的 AI 工程化流程。
+
 # 代码风格
 
 ## 必须严格遵守的准则
