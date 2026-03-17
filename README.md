@@ -145,6 +145,29 @@ uses: your-org/ace-assistant/.github/workflows/ace-fix.yml@v1
 
 This allows non-breaking updates (bug fixes, improvements) without changing caller workflows.
 
+### Where `v1` Comes From and How to Update It
+
+`v1` is a manually maintained **Git tag (major-version alias)** created by repository maintainers; it is not generated automatically by GitHub Actions.
+
+Recommended release flow:
+
+```bash
+# 1) Create an immutable concrete version tag first
+git tag -a v1.0.0 -m "Release v1.0.0"
+
+# 2) Move the major alias v1 to that version
+git tag -fa v1 -m "Move v1 to v1.0.0"
+
+# 3) Push both tags to remote
+git push origin v1.0.0
+git push origin v1 --force
+```
+
+Notes:
+- If external repositories use `@v1`, they usually do **not** need any changes; subsequent runs follow the updated `v1` pointer automatically.
+- If external repositories pin `@v1.0.0` or a commit SHA, they must update the reference manually to upgrade.
+- Keep immutable version tags (for example `v1.0.0`) for rollback and auditability.
+
 ## Directory Structure
 
 ```
