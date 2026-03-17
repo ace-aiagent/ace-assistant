@@ -54,7 +54,7 @@ jobs:
       - name: Checkout business repository for config access
         uses: actions/checkout@v4
       - name: Ensure labels
-        uses: ace0-uai/ace-assistant/.github/actions/ensure-labels@v1
+        uses: ace-aiagent/ace-assistant/.github/actions/ensure-labels@v1
         with:
           github-token: ${{ github.token }}
 
@@ -72,7 +72,7 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}/.ace-assistant
     steps:
       - name: Bootstrap AI worker
-        uses: ace0-uai/ace-assistant/.github/actions/ace-worker-bootstrap@v1
+        uses: ace-aiagent/ace-assistant/.github/actions/ace-worker-bootstrap@v1
         with:
           opencode-auth-b64: ${{ secrets.OPENCODE_AUTH_JSON_B64 }}
 

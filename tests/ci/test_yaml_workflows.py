@@ -169,8 +169,8 @@ class TestYamlWorkflowValidation:
                     actions_referenced.add(match.group(1))
                     continue
 
-                # Match cross-repo refs: ace0-uai/ace-assistant/.github/actions/xxx@ref
-                match = re.match(r"ace0-uai/ace-assistant/\.github/actions/([^/@]+)", uses)
+                # Match cross-repo refs: ace-aiagent/ace-assistant/.github/actions/xxx@ref
+                match = re.match(r"ace-aiagent/ace-assistant/\.github/actions/([^/@]+)", uses)
                 if match:
                     actions_referenced.add(match.group(1))
 

@@ -42,7 +42,7 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}/.ace-assistant
     steps:
       - name: Bootstrap AI worker
-        uses: ace0-uai/ace-assistant/.github/actions/ace-worker-bootstrap@v1
+        uses: ace-aiagent/ace-assistant/.github/actions/ace-worker-bootstrap@v1
         with:
           opencode-auth-b64: ${{ secrets.OPENCODE_AUTH_JSON_B64 }}
       - name: Fetch issue JSON

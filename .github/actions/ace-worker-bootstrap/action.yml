@@ -10,7 +10,7 @@ inputs:
   ace-assistant-repo:
     description: "ace-assistant repository in owner/repo format"
     required: false
-    default: "ace0-uai/ace-assistant"
+    default: "ace-aiagent/ace-assistant"
   ace-assistant-ref:
     description: "ace-assistant ref to checkout (tag, branch, or SHA)"
     required: false
