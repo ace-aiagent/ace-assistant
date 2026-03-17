@@ -61,9 +61,46 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TARGET_TYPE="$(jq -r '.target_type // "pr"' <<< "$FIX_PARAMS")"
-          TARGET_NUMBER="$(jq -r '.target_number' <<< "$FIX_PARAMS")"
-          EXTRA_PROMPT="$(jq -r '.extra_prompt // ""' <<< "$FIX_PARAMS")"
+
+          RAW_FIX_PARAMS="${FIX_PARAMS:-}"
+          SAFE_FIX_PARAMS='{}'
+          PARSE_OK=false
+
+          # Try parse: direct object -> stringified JSON -> double-stringified JSON
+          if [[ -n "$RAW_FIX_PARAMS" ]] && jq -e 'type == "object"' >/dev/null 2>&1 <<< "$RAW_FIX_PARAMS"; then
+            SAFE_FIX_PARAMS="$RAW_FIX_PARAMS"
+            PARSE_OK=true
+            echo "::debug::fix_params parsed as direct object"
+          elif [[ -n "$RAW_FIX_PARAMS" ]] && jq -e 'type == "string"' >/dev/null 2>&1 <<< "$RAW_FIX_PARAMS"; then
+            INNER="$(jq -r '.' <<< "$RAW_FIX_PARAMS")"
+            if jq -e 'type == "object"' >/dev/null 2>&1 <<< "$INNER"; then
+              SAFE_FIX_PARAMS="$INNER"
+              PARSE_OK=true
+              echo "::debug::fix_params parsed as stringified JSON"
+            elif jq -e 'type == "string"' >/dev/null 2>&1 <<< "$INNER"; then
+              DOUBLE_INNER="$(jq -r '.' <<< "$INNER")"
+              if jq -e 'type == "object"' >/dev/null 2>&1 <<< "$DOUBLE_INNER"; then
+                SAFE_FIX_PARAMS="$DOUBLE_INNER"
+                PARSE_OK=true
+                echo "::debug::fix_params parsed as double-stringified JSON"
+              fi
+            fi
+          fi
+
+          if [[ "$PARSE_OK" != "true" ]]; then
+            echo "::warning::fix_params is not a valid JSON object, fallback to {}"
+          fi
+
+          TARGET_TYPE="$(jq -r '.target_type // "pr"' <<< "$SAFE_FIX_PARAMS")"
+          TARGET_NUMBER="$(jq -r '.target_number' <<< "$SAFE_FIX_PARAMS")"
+
+          # Unified guard: validate target_number is not empty
+          if [[ -z "$TARGET_NUMBER" ]]; then
+            echo "::error::target_number is empty after parsing fix_params"
+            exit 1
+          fi
+
+          EXTRA_PROMPT="$(jq -r '.extra_prompt // ""' <<< "$SAFE_FIX_PARAMS")"
 
           gh workflow run ace-fix.yml \
             --repo "$REPO" \
