@@ -86,12 +86,21 @@ jobs:
         run: |
           set -euo pipefail
 
-          TARGET_TYPE="$(jq -r '.target_type // "issue"' <<< "$ROUTE_PARAMS")"
-          TARGET_NUMBER="$(jq -r '.target_number' <<< "$ROUTE_PARAMS")"
-          AUTO_LOOP="$(jq -r '.auto_loop // "true"' <<< "$ROUTE_PARAMS")"
-          EXTRA_PROMPT="$(jq -r '.extra_prompt // ""' <<< "$ROUTE_PARAMS")"
-          TRIAGE_JSON="$(jq -c '.triage_json // ""' <<< "$ROUTE_PARAMS")"
-          FORCE="$(jq -r '.force // "false"' <<< "$ROUTE_PARAMS")"
+          RAW_ROUTE_PARAMS="${ROUTE_PARAMS:-}"
+          SAFE_ROUTE_PARAMS='{}'
+
+          if [[ -n "$RAW_ROUTE_PARAMS" ]] && jq -e 'type == "object"' >/dev/null 2>&1 <<< "$RAW_ROUTE_PARAMS"; then
+            SAFE_ROUTE_PARAMS="$RAW_ROUTE_PARAMS"
+          else
+            echo "::warning::route_params is not a valid JSON object, fallback to {}"
+          fi
+
+          TARGET_TYPE="$(jq -r '.target_type // "issue"' <<< "$SAFE_ROUTE_PARAMS")"
+          TARGET_NUMBER="$(jq -r '.target_number' <<< "$SAFE_ROUTE_PARAMS")"
+          AUTO_LOOP="$(jq -r '.auto_loop // "true"' <<< "$SAFE_ROUTE_PARAMS")"
+          EXTRA_PROMPT="$(jq -r '.extra_prompt // ""' <<< "$SAFE_ROUTE_PARAMS")"
+          TRIAGE_JSON="$(jq -c '.triage_json // ""' <<< "$SAFE_ROUTE_PARAMS")"
+          FORCE="$(jq -r '.force // "false"' <<< "$SAFE_ROUTE_PARAMS")"
 
           gh workflow run ace-fix.yml \
             --repo "$REPO" \
@@ -118,10 +127,19 @@ jobs:
         run: |
           set -euo pipefail
 
-          PR_NUMBER="$(jq -r '.pr_number // .target_number' <<< "$ROUTE_PARAMS")"
-          AUTO_LOOP="$(jq -r '.auto_loop // "true"' <<< "$ROUTE_PARAMS")"
-          EXTRA_PROMPT="$(jq -r '.extra_prompt // ""' <<< "$ROUTE_PARAMS")"
-          FORCE="$(jq -r '.force // "false"' <<< "$ROUTE_PARAMS")"
+          RAW_ROUTE_PARAMS="${ROUTE_PARAMS:-}"
+          SAFE_ROUTE_PARAMS='{}'
+
+          if [[ -n "$RAW_ROUTE_PARAMS" ]] && jq -e 'type == "object"' >/dev/null 2>&1 <<< "$RAW_ROUTE_PARAMS"; then
+            SAFE_ROUTE_PARAMS="$RAW_ROUTE_PARAMS"
+          else
+            echo "::warning::route_params is not a valid JSON object, fallback to {}"
+          fi
+
+          PR_NUMBER="$(jq -r '.pr_number // .target_number' <<< "$SAFE_ROUTE_PARAMS")"
+          AUTO_LOOP="$(jq -r '.auto_loop // "true"' <<< "$SAFE_ROUTE_PARAMS")"
+          EXTRA_PROMPT="$(jq -r '.extra_prompt // ""' <<< "$SAFE_ROUTE_PARAMS")"
+          FORCE="$(jq -r '.force // "false"' <<< "$SAFE_ROUTE_PARAMS")"
 
           gh workflow run ace-review.yml \
             --repo "$REPO" \

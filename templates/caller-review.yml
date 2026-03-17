@@ -57,13 +57,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           REPO: ${{ github.repository }}
+          FIX_PARAMS: ${{ needs.review.outputs.fix_params }}
         shell: bash
         run: |
           set -euo pipefail
-          FIX_PARAMS='${{ needs.review.outputs.fix_params }}'
-          TARGET_TYPE=$(echo "$FIX_PARAMS" | jq -r '.target_type // "pr"')
-          TARGET_NUMBER=$(echo "$FIX_PARAMS" | jq -r '.target_number')
-          EXTRA_PROMPT=$(echo "$FIX_PARAMS" | jq -r '.extra_prompt // ""')
+          TARGET_TYPE="$(jq -r '.target_type // "pr"' <<< "$FIX_PARAMS")"
+          TARGET_NUMBER="$(jq -r '.target_number' <<< "$FIX_PARAMS")"
+          EXTRA_PROMPT="$(jq -r '.extra_prompt // ""' <<< "$FIX_PARAMS")"
 
           gh workflow run ace-fix.yml \
             --repo "$REPO" \
