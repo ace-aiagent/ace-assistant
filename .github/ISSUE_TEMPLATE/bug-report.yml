@@ -1,0 +1,71 @@
+name: Bug report
+description: Report a bug for AI triage and auto-fix
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: input
+    id: base_branch
+    attributes:
+      label: Base branch
+      description: The branch the fix PR must be based on
+      placeholder: main
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: A short summary of the bug
+      placeholder: The save button does nothing after form submit.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected behavior
+      description: What should happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual_behavior
+    attributes:
+      label: Actual behavior
+      description: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce_steps
+    attributes:
+      label: Reproduce steps
+      description: Steps to reproduce the issue
+      placeholder: |
+        1. Go to ...
+        2. Click ...
+        3. See error ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance criteria
+      description: How do we know this bug is fixed?
+      placeholder: |
+        - Save succeeds
+        - No console error
+        - Existing tests pass
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra_logs_or_screenshots
+    attributes:
+      label: Extra logs or screenshots
+      description: Optional
+    validations:
+      required: false
