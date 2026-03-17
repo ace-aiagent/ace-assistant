@@ -76,20 +76,22 @@ jobs:
     needs: dispatch
     if: needs.dispatch.outputs.route_to == 'fix'
     runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ secrets.GH_PAT }}
-      REPO: ${{ github.repository }}
-      TARGET_TYPE: ${{ fromJSON(needs.dispatch.outputs.route_params).target_type || 'issue' }}
-      TARGET_NUMBER: ${{ fromJSON(needs.dispatch.outputs.route_params).target_number }}
-      AUTO_LOOP: ${{ fromJSON(needs.dispatch.outputs.route_params).auto_loop || 'true' }}
-      EXTRA_PROMPT: ${{ fromJSON(needs.dispatch.outputs.route_params).extra_prompt || '' }}
-      TRIAGE_JSON: ${{ toJSON(fromJSON(needs.dispatch.outputs.route_params).triage_json || '') }}
-      FORCE: ${{ fromJSON(needs.dispatch.outputs.route_params).force || 'false' }}
     steps:
       - name: Dispatch fix workflow
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          REPO: ${{ github.repository }}
+          ROUTE_PARAMS: ${{ needs.dispatch.outputs.route_params }}
         shell: bash
         run: |
           set -euo pipefail
+
+          TARGET_TYPE="$(jq -r '.target_type // "issue"' <<< "$ROUTE_PARAMS")"
+          TARGET_NUMBER="$(jq -r '.target_number' <<< "$ROUTE_PARAMS")"
+          AUTO_LOOP="$(jq -r '.auto_loop // "true"' <<< "$ROUTE_PARAMS")"
+          EXTRA_PROMPT="$(jq -r '.extra_prompt // ""' <<< "$ROUTE_PARAMS")"
+          TRIAGE_JSON="$(jq -c '.triage_json // ""' <<< "$ROUTE_PARAMS")"
+          FORCE="$(jq -r '.force // "false"' <<< "$ROUTE_PARAMS")"
 
           gh workflow run ace-fix.yml \
             --repo "$REPO" \
@@ -106,18 +108,20 @@ jobs:
     needs: dispatch
     if: needs.dispatch.outputs.route_to == 'review'
     runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ secrets.GH_PAT }}
-      REPO: ${{ github.repository }}
-      PR_NUMBER: ${{ fromJSON(needs.dispatch.outputs.route_params).pr_number || fromJSON(needs.dispatch.outputs.route_params).target_number }}
-      AUTO_LOOP: ${{ fromJSON(needs.dispatch.outputs.route_params).auto_loop || 'true' }}
-      EXTRA_PROMPT: ${{ fromJSON(needs.dispatch.outputs.route_params).extra_prompt || '' }}
-      FORCE: ${{ fromJSON(needs.dispatch.outputs.route_params).force || 'false' }}
     steps:
       - name: Dispatch review workflow
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          REPO: ${{ github.repository }}
+          ROUTE_PARAMS: ${{ needs.dispatch.outputs.route_params }}
         shell: bash
         run: |
           set -euo pipefail
+
+          PR_NUMBER="$(jq -r '.pr_number // .target_number' <<< "$ROUTE_PARAMS")"
+          AUTO_LOOP="$(jq -r '.auto_loop // "true"' <<< "$ROUTE_PARAMS")"
+          EXTRA_PROMPT="$(jq -r '.extra_prompt // ""' <<< "$ROUTE_PARAMS")"
+          FORCE="$(jq -r '.force // "false"' <<< "$ROUTE_PARAMS")"
 
           gh workflow run ace-review.yml \
             --repo "$REPO" \
