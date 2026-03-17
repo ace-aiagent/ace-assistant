@@ -88,15 +88,42 @@ jobs:
 
           RAW_ROUTE_PARAMS="${ROUTE_PARAMS:-}"
           SAFE_ROUTE_PARAMS='{}'
+          PARSE_OK=false
 
+          # Try parse: direct object -> stringified JSON -> double-stringified JSON
           if [[ -n "$RAW_ROUTE_PARAMS" ]] && jq -e 'type == "object"' >/dev/null 2>&1 <<< "$RAW_ROUTE_PARAMS"; then
             SAFE_ROUTE_PARAMS="$RAW_ROUTE_PARAMS"
-          else
+            PARSE_OK=true
+            echo "::debug::route_params parsed as direct object"
+          elif [[ -n "$RAW_ROUTE_PARAMS" ]] && jq -e 'type == "string"' >/dev/null 2>&1 <<< "$RAW_ROUTE_PARAMS"; then
+            INNER="$(jq -r '.' <<< "$RAW_ROUTE_PARAMS")"
+            if jq -e 'type == "object"' >/dev/null 2>&1 <<< "$INNER"; then
+              SAFE_ROUTE_PARAMS="$INNER"
+              PARSE_OK=true
+              echo "::debug::route_params parsed as stringified JSON"
+            elif jq -e 'type == "string"' >/dev/null 2>&1 <<< "$INNER"; then
+              DOUBLE_INNER="$(jq -r '.' <<< "$INNER")"
+              if jq -e 'type == "object"' >/dev/null 2>&1 <<< "$DOUBLE_INNER"; then
+                SAFE_ROUTE_PARAMS="$DOUBLE_INNER"
+                PARSE_OK=true
+                echo "::debug::route_params parsed as double-stringified JSON"
+              fi
+            fi
+          fi
+
+          if [[ "$PARSE_OK" != "true" ]]; then
             echo "::warning::route_params is not a valid JSON object, fallback to {}"
           fi
 
           TARGET_TYPE="$(jq -r '.target_type // "issue"' <<< "$SAFE_ROUTE_PARAMS")"
           TARGET_NUMBER="$(jq -r '.target_number' <<< "$SAFE_ROUTE_PARAMS")"
+
+          # Unified guard: validate target_number is not empty
+          if [[ -z "$TARGET_NUMBER" ]]; then
+            echo "::error::target_number is empty after parsing route_params"
+            exit 1
+          fi
+
           AUTO_LOOP="$(jq -r '.auto_loop // "true"' <<< "$SAFE_ROUTE_PARAMS")"
           EXTRA_PROMPT="$(jq -r '.extra_prompt // ""' <<< "$SAFE_ROUTE_PARAMS")"
           TRIAGE_JSON="$(jq -c '.triage_json // ""' <<< "$SAFE_ROUTE_PARAMS")"
@@ -129,14 +156,41 @@ jobs:
 
           RAW_ROUTE_PARAMS="${ROUTE_PARAMS:-}"
           SAFE_ROUTE_PARAMS='{}'
+          PARSE_OK=false
 
+          # Try parse: direct object -> stringified JSON -> double-stringified JSON
           if [[ -n "$RAW_ROUTE_PARAMS" ]] && jq -e 'type == "object"' >/dev/null 2>&1 <<< "$RAW_ROUTE_PARAMS"; then
             SAFE_ROUTE_PARAMS="$RAW_ROUTE_PARAMS"
-          else
+            PARSE_OK=true
+            echo "::debug::route_params parsed as direct object"
+          elif [[ -n "$RAW_ROUTE_PARAMS" ]] && jq -e 'type == "string"' >/dev/null 2>&1 <<< "$RAW_ROUTE_PARAMS"; then
+            INNER="$(jq -r '.' <<< "$RAW_ROUTE_PARAMS")"
+            if jq -e 'type == "object"' >/dev/null 2>&1 <<< "$INNER"; then
+              SAFE_ROUTE_PARAMS="$INNER"
+              PARSE_OK=true
+              echo "::debug::route_params parsed as stringified JSON"
+            elif jq -e 'type == "string"' >/dev/null 2>&1 <<< "$INNER"; then
+              DOUBLE_INNER="$(jq -r '.' <<< "$INNER")"
+              if jq -e 'type == "object"' >/dev/null 2>&1 <<< "$DOUBLE_INNER"; then
+                SAFE_ROUTE_PARAMS="$DOUBLE_INNER"
+                PARSE_OK=true
+                echo "::debug::route_params parsed as double-stringified JSON"
+              fi
+            fi
+          fi
+
+          if [[ "$PARSE_OK" != "true" ]]; then
             echo "::warning::route_params is not a valid JSON object, fallback to {}"
           fi
 
-          PR_NUMBER="$(jq -r '.pr_number // .target_number' <<< "$SAFE_ROUTE_PARAMS")"
+          PR_NUMBER="$(jq -r '.pr_number // .target_number // empty' <<< "$SAFE_ROUTE_PARAMS")"
+
+          # Unified guard: validate pr_number is not empty
+          if [[ -z "$PR_NUMBER" ]]; then
+            echo "::error::pr_number is empty after parsing route_params"
+            exit 1
+          fi
+
           AUTO_LOOP="$(jq -r '.auto_loop // "true"' <<< "$SAFE_ROUTE_PARAMS")"
           EXTRA_PROMPT="$(jq -r '.extra_prompt // ""' <<< "$SAFE_ROUTE_PARAMS")"
           FORCE="$(jq -r '.force // "false"' <<< "$SAFE_ROUTE_PARAMS")"
