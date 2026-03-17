@@ -56,4 +56,6 @@ jobs:
       extra_prompt: ${{ inputs.extra_prompt }}
       triage_json: ${{ inputs.triage_json }}
       force: ${{ inputs.force }}
-    secrets: inherit
+    secrets:
+      OPENCODE_AUTH_JSON_B64: ${{ secrets.OPENCODE_AUTH_JSON_B64 }}
+      GH_PAT: ${{ secrets.GH_PAT }}
