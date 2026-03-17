@@ -1,5 +1,5 @@
 # Composite action: common bootstrap steps for AI worker workflows.
-# Handles dual checkout: business repo + coding-agent repo.
+# Handles dual checkout: business repo + ace-assistant repo.
 name: AI Worker Bootstrap
 description: Checkout repos, setup Python/uv, OpenCode auth, git identity, and PYTHONPATH
 
@@ -7,12 +7,12 @@ inputs:
   opencode-auth-b64:
     description: Base64-encoded OpenCode auth.json content
     required: true
-  coding-agent-repo:
-    description: "coding-agent repository in owner/repo format"
+  ace-assistant-repo:
+    description: "ace-assistant repository in owner/repo format"
     required: false
-    default: "ace0-uai/coding-agent"
-  coding-agent-ref:
-    description: "coding-agent ref to checkout (tag, branch, or SHA)"
+    default: "ace0-uai/ace-assistant"
+  ace-assistant-ref:
+    description: "ace-assistant ref to checkout (tag, branch, or SHA)"
     required: false
     default: "v1"
 
@@ -25,16 +25,16 @@ runs:
         fetch-depth: 0
         persist-credentials: true
 
-    - name: Checkout coding-agent
+    - name: Checkout ace-assistant
       uses: actions/checkout@v4
       with:
-        repository: ${{ inputs.coding-agent-repo }}
-        ref: ${{ inputs.coding-agent-ref }}
-        path: .coding-agent
+        repository: ${{ inputs.ace-assistant-repo }}
+        ref: ${{ inputs.ace-assistant-ref }}
+        path: .ace-assistant
 
     - name: Set PYTHONPATH for CI scripts
       shell: bash
-      run: echo "PYTHONPATH=${{ github.workspace }}/.coding-agent" >> "$GITHUB_ENV"
+      run: echo "PYTHONPATH=${{ github.workspace }}/.ace-assistant" >> "$GITHUB_ENV"
 
     - name: Setup Python
       uses: actions/setup-python@v5
@@ -45,9 +45,9 @@ runs:
       uses: astral-sh/setup-uv@v6
 
     - name: Setup OpenCode
-      uses: ./.coding-agent/.github/actions/setup-opencode
+      uses: ./.ace-assistant/.github/actions/setup-opencode
       with:
         opencode-auth-b64: ${{ inputs.opencode-auth-b64 }}
 
     - name: Configure git identity
-      uses: ./.coding-agent/.github/actions/configure-git
+      uses: ./.ace-assistant/.github/actions/configure-git

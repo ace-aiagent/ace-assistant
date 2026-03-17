@@ -18,7 +18,7 @@ import yaml
 from scripts.ci._config import get_workflow_validation, load_ace_config
 
 # TODO: After reusable workflow migration, these paths need adaptation.
-# In the reusable workflow context, REPO_ROOT points to the coding-agent repo,
+# In the reusable workflow context, REPO_ROOT points to the ace-assistant repo,
 # but workflows live in the BUSINESS repo ($GITHUB_WORKSPACE).
 # WORKFLOWS_DIR should be configurable or resolved via env var (e.g. BUSINESS_REPO_ROOT).
 REPO_ROOT = Path(__file__).resolve().parents[2]

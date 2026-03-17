@@ -163,14 +163,14 @@ class TestYamlWorkflowValidation:
                     actions_referenced.add(match.group(1))
                     continue
 
-                # Match checkout-path relative refs: ./.coding-agent/.github/actions/xxx
-                match = re.match(r"\./\.coding-agent/\.github/actions/([^/]+)", uses)
+                # Match checkout-path relative refs: ./.ace-assistant/.github/actions/xxx
+                match = re.match(r"\./\.ace-assistant/\.github/actions/([^/]+)", uses)
                 if match:
                     actions_referenced.add(match.group(1))
                     continue
 
-                # Match cross-repo refs: ace0-uai/coding-agent/.github/actions/xxx@ref
-                match = re.match(r"ace0-uai/coding-agent/\.github/actions/([^/@]+)", uses)
+                # Match cross-repo refs: ace0-uai/ace-assistant/.github/actions/xxx@ref
+                match = re.match(r"ace0-uai/ace-assistant/\.github/actions/([^/@]+)", uses)
                 if match:
                     actions_referenced.add(match.group(1))
 

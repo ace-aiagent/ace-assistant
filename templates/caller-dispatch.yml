@@ -1,5 +1,5 @@
 # Caller workflow for AI Dispatch — place in your repo's .github/workflows/ai-dispatch.yml
-# Replace ORG/coding-agent with your actual org/repo path for the coding-agent repository.
+# Replace ORG/ace-assistant with your actual org/repo path for the ace-assistant repository.
 #
 # This caller handles event listening (issues, comments, PRs) and delegates the
 # triage/routing logic to the reusable dispatch workflow. After the reusable workflow
@@ -59,7 +59,7 @@ concurrency:
 
 jobs:
   dispatch:
-    uses: ORG/coding-agent/.github/workflows/ai-dispatch.yml@v1
+    uses: ORG/ace-assistant/.github/workflows/ai-dispatch.yml@v1
     with:
       event_name: ${{ github.event_name }}
       target_type: ${{ inputs.target_type || '' }}

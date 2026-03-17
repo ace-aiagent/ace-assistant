@@ -1,4 +1,4 @@
-# coding-agent
+# ace-assistant
 
 Reusable AI CI workflows for GitHub Actions. Provides AI-powered issue triage, automated code fixing, and PR review as centralized, reusable workflows that any repository can adopt.
 
@@ -16,20 +16,20 @@ Copy the 3 caller workflow templates from `templates/` to your repository's `.gi
 
 ```bash
 # From your business repository root
-curl -sL https://raw.githubusercontent.com/ORG/coding-agent/v1/templates/caller-dispatch.yml \
+curl -sL https://raw.githubusercontent.com/ORG/ace-assistant/v1/templates/caller-dispatch.yml \
   -o .github/workflows/ai-dispatch.yml
-curl -sL https://raw.githubusercontent.com/ORG/coding-agent/v1/templates/caller-fix.yml \
+curl -sL https://raw.githubusercontent.com/ORG/ace-assistant/v1/templates/caller-fix.yml \
   -o .github/workflows/ai-fix.yml
-curl -sL https://raw.githubusercontent.com/ORG/coding-agent/v1/templates/caller-review.yml \
+curl -sL https://raw.githubusercontent.com/ORG/ace-assistant/v1/templates/caller-review.yml \
   -o .github/workflows/ai-review.yml
 ```
 
 ### 2. Replace placeholder
 
-In all 3 workflow files, replace `ORG/coding-agent` with the actual org/repo path:
+In all 3 workflow files, replace `ORG/ace-assistant` with the actual org/repo path:
 
 ```bash
-sed -i 's|ORG/coding-agent|your-org/coding-agent|g' \
+sed -i 's|ORG/ace-assistant|your-org/ace-assistant|g' \
   .github/workflows/ai-dispatch.yml \
   .github/workflows/ai-fix.yml \
   .github/workflows/ai-review.yml
@@ -74,7 +74,7 @@ Create `.github/ISSUE_TEMPLATE/bug-report.yml` with form fields that the AI can 
 ## Architecture
 
 ```
-Business Repo                          coding-agent Repo
+Business Repo                          ace-assistant Repo
 ┌─────────────────┐                   ┌──────────────────────┐
 │ .github/        │                   │ .github/             │
 │   workflows/    │    workflow_call  │   workflows/         │
@@ -140,7 +140,7 @@ Caller workflows must declare these permissions:
 Pin caller workflows to a major version tag:
 
 ```yaml
-uses: your-org/coding-agent/.github/workflows/ai-fix.yml@v1
+uses: your-org/ace-assistant/.github/workflows/ai-fix.yml@v1
 ```
 
 This allows non-breaking updates (bug fixes, improvements) without changing caller workflows.

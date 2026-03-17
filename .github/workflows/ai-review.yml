@@ -37,18 +37,18 @@ jobs:
   review:
     runs-on: ubuntu-latest
     env:
-      PYTHONPATH: ${{ github.workspace }}/.coding-agent
+      PYTHONPATH: ${{ github.workspace }}/.ace-assistant
     outputs:
       needs_fix: ${{ steps.set_outputs.outputs.needs_fix }}
       fix_params: ${{ steps.set_outputs.outputs.fix_params }}
     steps:
       - name: Bootstrap AI worker
-        uses: ace0-uai/coding-agent/.github/actions/ai-worker-bootstrap@v1
+        uses: ace0-uai/ace-assistant/.github/actions/ai-worker-bootstrap@v1
         with:
           opencode-auth-b64: ${{ secrets.OPENCODE_AUTH_JSON_B64 }}
       - name: Load error recovery config
         id: load_error_config
-        uses: ./.coding-agent/.github/actions/load-error-config
+        uses: ./.ace-assistant/.github/actions/load-error-config
       - name: Fetch PR JSON and comments
         env:
           GH_TOKEN: ${{ github.token }}
@@ -142,7 +142,7 @@ jobs:
           echo "should_exit=false" >> "$GITHUB_OUTPUT"
       - name: Upsert guard lock meta comment
         if: steps.guard.outputs.should_exit != 'true'
-        uses: ./.coding-agent/.github/actions/upsert-marker-comment
+        uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
           marker: ai-pr-meta
           body-file: pr_meta_comment.md
@@ -238,7 +238,7 @@ jobs:
           python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
       - name: Upsert approval meta comment
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'APPROVED'
-        uses: ./.coding-agent/.github/actions/upsert-marker-comment
+        uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
           marker: ai-pr-meta
           body-file: pr_meta_comment.md
@@ -287,7 +287,7 @@ jobs:
           python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
       - name: Upsert loop exceeded meta comment
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry != 'true'
-        uses: ./.coding-agent/.github/actions/upsert-marker-comment
+        uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
           marker: ai-pr-meta
           body-file: pr_meta_comment.md
@@ -298,7 +298,7 @@ jobs:
       - name: Check failure count before dispatch
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry == 'true'
         id: failure_guard
-        uses: ./.coding-agent/.github/actions/check-failure-count
+        uses: ./.ace-assistant/.github/actions/check-failure-count
         with:
           meta-file: pr_meta.json
           max-failures: ${{ steps.load_error_config.outputs.max_failures }}
@@ -323,7 +323,7 @@ jobs:
           python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
       - name: Upsert fix-requested meta comment
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
-        uses: ./.coding-agent/.github/actions/upsert-marker-comment
+        uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
           marker: ai-pr-meta
           body-file: pr_meta_comment.md
@@ -377,7 +377,7 @@ jobs:
           python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
       - name: Upsert manual mode meta comment
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop != 'true'
-        uses: ./.coding-agent/.github/actions/upsert-marker-comment
+        uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
           marker: ai-pr-meta
           body-file: pr_meta_comment.md

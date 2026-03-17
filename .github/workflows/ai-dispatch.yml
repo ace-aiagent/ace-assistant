@@ -54,7 +54,7 @@ jobs:
       - name: Checkout business repository for config access
         uses: actions/checkout@v4
       - name: Ensure labels
-        uses: ace0-uai/coding-agent/.github/actions/ensure-labels@v1
+        uses: ace0-uai/ace-assistant/.github/actions/ensure-labels@v1
         with:
           github-token: ${{ github.token }}
 
@@ -69,10 +69,10 @@ jobs:
       route_to: ${{ steps.set_route.outputs.route_to }}
       route_params: ${{ steps.set_route.outputs.route_params }}
     env:
-      PYTHONPATH: ${{ github.workspace }}/.coding-agent
+      PYTHONPATH: ${{ github.workspace }}/.ace-assistant
     steps:
       - name: Bootstrap AI worker
-        uses: ace0-uai/coding-agent/.github/actions/ai-worker-bootstrap@v1
+        uses: ace0-uai/ace-assistant/.github/actions/ai-worker-bootstrap@v1
         with:
           opencode-auth-b64: ${{ secrets.OPENCODE_AUTH_JSON_B64 }}
 

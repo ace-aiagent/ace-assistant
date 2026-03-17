@@ -39,10 +39,10 @@ jobs:
   fix:
     runs-on: ubuntu-latest
     env:
-      PYTHONPATH: ${{ github.workspace }}/.coding-agent
+      PYTHONPATH: ${{ github.workspace }}/.ace-assistant
     steps:
       - name: Bootstrap AI worker
-        uses: ace0-uai/coding-agent/.github/actions/ai-worker-bootstrap@v1
+        uses: ace0-uai/ace-assistant/.github/actions/ai-worker-bootstrap@v1
         with:
           opencode-auth-b64: ${{ secrets.OPENCODE_AUTH_JSON_B64 }}
       - name: Fetch issue JSON
@@ -194,7 +194,7 @@ jobs:
           set -euo pipefail; python -m scripts.ci.build_commit_msg             --mode initial             --result-file fix_result.json             --output commit_message.txt
       - name: Commit and push issue fix
         if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG' && steps.issue_diff_check.outputs.has_changes == 'true'
-        uses: ./.coding-agent/.github/actions/git-commit-push
+        uses: ./.ace-assistant/.github/actions/git-commit-push
         with:
           commit-message-file: commit_message.txt
           preserve-files: "commit_message.txt issue.json fix_result.json"
@@ -237,7 +237,7 @@ jobs:
         if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG' && steps.issue_diff_check.outputs.has_changes == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        uses: ./.coding-agent/.github/actions/upsert-marker-comment
+        uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
           marker: ai-pr-meta
           body-file: pr_meta_comment.md
@@ -342,7 +342,7 @@ jobs:
       - name: Load error recovery config
         if: inputs.target_type == 'pr'
         id: load_error_config
-        uses: ./.coding-agent/.github/actions/load-error-config
+        uses: ./.ace-assistant/.github/actions/load-error-config
       - name: PR idempotency guard
         if: inputs.target_type == 'pr'
         id: pr_guard
@@ -356,7 +356,7 @@ jobs:
       - name: Check failure count limit
         if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true'
         id: failure_guard
-        uses: ./.coding-agent/.github/actions/check-failure-count
+        uses: ./.ace-assistant/.github/actions/check-failure-count
         with:
           meta-file: pr_meta.json
           max-failures: ${{ steps.load_error_config.outputs.max_failures }}
@@ -380,7 +380,7 @@ jobs:
         if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        uses: ./.coding-agent/.github/actions/upsert-marker-comment
+        uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
           marker: ai-pr-meta
           body-file: pr_meta_comment.md
@@ -433,7 +433,7 @@ jobs:
           set -euo pipefail; python -m scripts.ci.build_commit_msg             --mode retry             --result-file fix_result.json             --output commit_message.txt
       - name: Commit and push PR retry fix
         if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true' && steps.pr_diff_check.outputs.has_changes == 'true'
-        uses: ./.coding-agent/.github/actions/git-commit-push
+        uses: ./.ace-assistant/.github/actions/git-commit-push
         with:
           commit-message-file: commit_message.txt
           preserve-files: "commit_message.txt pr.json pr_meta.json pr_comments.json"
@@ -452,7 +452,7 @@ jobs:
         if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        uses: ./.coding-agent/.github/actions/upsert-marker-comment
+        uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
           marker: ai-pr-meta
           body-file: pr_meta_comment.md
