@@ -59,7 +59,7 @@ Add these secrets to your repository (Settings → Secrets and variables → Act
 | Secret | Description | Required |
 |--------|-------------|----------|
 | `OPENCODE_AUTH_JSON_B64` | Base64-encoded OpenCode auth JSON | Yes |
-| `GH_PAT` | GitHub Personal Access Token with repo + workflow scope | Yes |
+| `GH_PAT` | GitHub Personal Access Token with `repo` + `workflow` scope | Yes |
 
 The PAT needs `repo` and `workflow` permissions to dispatch workflows and manage PRs/issues.
 
@@ -145,11 +145,11 @@ uses: your-org/ace-assistant/.github/workflows/ace-fix.yml@v1
 
 This allows non-breaking updates (bug fixes, improvements) without changing caller workflows.
 
-### Where `v1` Comes From and How to Update It
+### How `v1` Works
 
-`v1` is a manually maintained **Git tag (major-version alias)** created by repository maintainers; it is not generated automatically by GitHub Actions.
+`v1` is a maintained major-version tag, not an automatically generated GitHub Actions concept.
 
-Recommended release flow:
+Release flow:
 
 ```bash
 # 1) Create an immutable concrete version tag first
@@ -163,10 +163,9 @@ git push origin v1.0.0
 git push origin v1 --force
 ```
 
-Notes:
-- If external repositories use `@v1`, they usually do **not** need any changes; subsequent runs follow the updated `v1` pointer automatically.
-- If external repositories pin `@v1.0.0` or a commit SHA, they must update the reference manually to upgrade.
-- Keep immutable version tags (for example `v1.0.0`) for rollback and auditability.
+- Callers using `@v1` should expect backward-compatible `1.x` updates.
+- Callers that need stricter change control can pin a concrete release tag or commit SHA instead.
+- Repository maintainers should keep `v1` pointing at the latest stable `1.x` release.
 
 ## Directory Structure
 

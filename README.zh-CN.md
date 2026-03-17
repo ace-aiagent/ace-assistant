@@ -59,7 +59,7 @@ sed -i 's|ORG/ace-assistant|your-org/ace-assistant|g' \
 | Secret | 说明 | 是否必需 |
 |--------|------|----------|
 | `OPENCODE_AUTH_JSON_B64` | Base64 编码的 OpenCode 认证 JSON | 是 |
-| `GH_PAT` | 具有 repo + workflow 权限的 GitHub Personal Access Token | 是 |
+| `GH_PAT` | 具有 `repo` + `workflow` 权限的 GitHub Personal Access Token | 是 |
 
 PAT 需要 `repo` 和 `workflow` 权限，用于调度工作流和管理 PR/Issue。
 
@@ -145,11 +145,11 @@ uses: your-org/ace-assistant/.github/workflows/ace-fix.yml@v1
 
 这样 ace-assistant 的非破坏性更新（Bug 修复、功能改进）会自动生效，无需修改 Caller Workflow。
 
-### `v1` tag 从哪里来、如何更新
+### `v1` 的含义
 
-`v1` 是仓库维护者手动创建和维护的 **Git tag（主版本别名）**，不是 GitHub Actions 自动生成。
+`v1` 是维护者手动维护的主版本 tag，不是 GitHub Actions 自动生成的概念。
 
-推荐发布流程：
+发布流程：
 
 ```bash
 # 1) 先创建不可变的具体版本 tag
@@ -163,10 +163,9 @@ git push origin v1.0.0
 git push origin v1 --force
 ```
 
-说明：
-- 外部仓库若使用 `@v1`，通常**无需修改**，后续运行会自动跟随到新的 `v1` 指向。
-- 外部仓库若固定到 `@v1.0.0` 或 commit SHA，则需要手动更新引用才会升级。
-- 建议始终同时保留不可变 tag（如 `v1.0.0`），便于回滚与审计。
+- 使用 `@v1` 的调用方，应预期接收兼容的 `1.x` 更新。
+- 如果调用方需要更严格的变更控制，可以固定到具体 release tag 或 commit SHA。
+- 仓库维护者应让 `v1` 始终指向最新稳定的 `1.x` 版本。
 
 ## 目录结构
 
