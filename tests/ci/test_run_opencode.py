@@ -478,6 +478,51 @@ def test_main_jsonl_mode_raises_when_no_markers_in_text(monkeypatch: pytest.Monk
         _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
 
 
+def test_main_jsonl_mode_recovers_when_end_marker_missing_but_json_complete(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prompt_file = tmp_path / "prompt.md"
+    output_file = tmp_path / "result.json"
+    prompt_file.write_text("prompt", encoding="utf-8")
+
+    jsonl_lines = "\n".join([
+        _make_jsonl_step_event("step_start"),
+        _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
+        _make_jsonl_text_event('{"summary":"ok","changed_files":[],"verification":[]}'),
+        _make_jsonl_step_event("step_finish"),
+    ]) + "\n"
+
+    _mock_popen(monkeypatch, stdout_text=jsonl_lines)
+
+    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
+
+    assert json.loads(output_file.read_text(encoding="utf-8")) == {
+        "summary": "ok",
+        "changed_files": [],
+        "verification": [],
+    }
+
+
+def test_main_jsonl_mode_raises_when_end_marker_missing_and_json_truncated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prompt_file = tmp_path / "prompt.md"
+    output_file = tmp_path / "result.json"
+    prompt_file.write_text("prompt", encoding="utf-8")
+
+    jsonl_lines = "\n".join([
+        _make_jsonl_step_event("step_start"),
+        _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
+        _make_jsonl_text_event('{"summary":"ok","verification":[{"command":"pnpm test","result":"pass","details\\'),
+        _make_jsonl_step_event("step_finish"),
+    ]) + "\n"
+
+    _mock_popen(monkeypatch, stdout_text=jsonl_lines)
+
+    with pytest.raises(SystemExit, match="Could not find AI_RESULT_BEGIN/AI_RESULT_END JSON payload"):
+        _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
+
+
 def test_main_jsonl_mode_writes_raw_log(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     prompt_file = tmp_path / "prompt.md"
     output_file = tmp_path / "result.json"
@@ -511,3 +556,165 @@ def test_main_jsonl_mode_handles_non_zero_return_code(monkeypatch: pytest.Monkey
         _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
 
 
+def test_main_retries_once_on_missing_markers_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prompt_file = tmp_path / "prompt.md"
+    output_file = tmp_path / "result.json"
+    prompt_file.write_text("prompt", encoding="utf-8")
+
+    attempt_outputs = [
+        "\n".join([
+            _make_jsonl_step_event("step_start"),
+            _make_jsonl_text_event("analysis only"),
+            _make_jsonl_step_event("step_finish"),
+        ]) + "\n",
+        "\n".join([
+            _make_jsonl_step_event("step_start"),
+            _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
+            _make_jsonl_text_event('{"ok": true}\n'),
+            _make_jsonl_text_event("AI_RESULT_END\n"),
+            _make_jsonl_step_event("step_finish"),
+        ]) + "\n",
+    ]
+
+    call_idx = {"value": 0}
+
+    def _factory(*args, **kwargs) -> _FakeProc:
+        idx = call_idx["value"]
+        call_idx["value"] += 1
+        return _FakeProc(stdout=io.StringIO(attempt_outputs[idx]), stderr=io.StringIO(""), returncode=0)
+
+    monkeypatch.setattr(subprocess, "Popen", _factory)
+    monkeypatch.setenv("OPENCODE_MAX_ATTEMPTS", "2")
+
+    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
+
+    assert call_idx["value"] == 2
+    assert json.loads(output_file.read_text(encoding="utf-8")) == {"ok": True}
+
+
+def test_main_uses_single_attempt_when_configured(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prompt_file = tmp_path / "prompt.md"
+    output_file = tmp_path / "result.json"
+    prompt_file.write_text("prompt", encoding="utf-8")
+
+    call_count = {"value": 0}
+
+    def _factory(*args, **kwargs) -> _FakeProc:
+        call_count["value"] += 1
+        stdout_text = "\n".join([
+            _make_jsonl_step_event("step_start"),
+            _make_jsonl_text_event("analysis only"),
+            _make_jsonl_step_event("step_finish"),
+        ]) + "\n"
+        return _FakeProc(stdout=io.StringIO(stdout_text), stderr=io.StringIO(""), returncode=0)
+
+    monkeypatch.setattr(subprocess, "Popen", _factory)
+    monkeypatch.setenv("OPENCODE_MAX_ATTEMPTS", "1")
+
+    with pytest.raises(SystemExit, match="Could not find AI_RESULT_BEGIN/AI_RESULT_END JSON payload"):
+        _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
+
+    assert call_count["value"] == 1
+
+
+def test_main_prefers_latest_incomplete_block_when_json_is_complete(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prompt_file = tmp_path / "prompt.md"
+    output_file = tmp_path / "result.json"
+    prompt_file.write_text("prompt", encoding="utf-8")
+
+    jsonl_lines = "\n".join([
+        _make_jsonl_step_event("step_start"),
+        _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
+        _make_jsonl_text_event('{"round": 1}\n'),
+        _make_jsonl_text_event("AI_RESULT_END\n"),
+        _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
+        _make_jsonl_text_event('{"round": 2}'),
+        _make_jsonl_step_event("step_finish"),
+    ]) + "\n"
+
+    _mock_popen(monkeypatch, stdout_text=jsonl_lines)
+
+    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
+
+    assert json.loads(output_file.read_text(encoding="utf-8")) == {"round": 2}
+
+
+def test_main_falls_back_to_last_closed_block_when_latest_incomplete_is_invalid(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prompt_file = tmp_path / "prompt.md"
+    output_file = tmp_path / "result.json"
+    prompt_file.write_text("prompt", encoding="utf-8")
+
+    jsonl_lines = "\n".join([
+        _make_jsonl_step_event("step_start"),
+        _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
+        _make_jsonl_text_event('{"round": 1}\n'),
+        _make_jsonl_text_event("AI_RESULT_END\n"),
+        _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
+        _make_jsonl_text_event('{"round": '),
+        _make_jsonl_step_event("step_finish"),
+    ]) + "\n"
+
+    _mock_popen(monkeypatch, stdout_text=jsonl_lines)
+
+    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
+
+    assert json.loads(output_file.read_text(encoding="utf-8")) == {"round": 1}
+
+
+def test_main_retries_once_on_parse_error_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prompt_file = tmp_path / "prompt.md"
+    output_file = tmp_path / "result.json"
+    prompt_file.write_text("prompt", encoding="utf-8")
+
+    attempt_outputs = [
+        "AI_RESULT_BEGIN\n{not valid json\nAI_RESULT_END\n",
+        "AI_RESULT_BEGIN\n{\"ok\": true}\nAI_RESULT_END\n",
+    ]
+
+    call_idx = {"value": 0}
+
+    def _factory(*args, **kwargs) -> _FakeProc:
+        idx = call_idx["value"]
+        call_idx["value"] += 1
+        return _FakeProc(stdout=io.StringIO(attempt_outputs[idx]), stderr=io.StringIO(""), returncode=0)
+
+    monkeypatch.setattr(subprocess, "Popen", _factory)
+    monkeypatch.setenv("OPENCODE_MAX_ATTEMPTS", "2")
+
+    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
+
+    assert call_idx["value"] == 2
+    assert json.loads(output_file.read_text(encoding="utf-8")) == {"ok": True}
+
+
+def test_main_non_zero_return_code_does_not_retry_even_when_configured(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prompt_file = tmp_path / "prompt.md"
+    output_file = tmp_path / "result.json"
+    prompt_file.write_text("prompt", encoding="utf-8")
+
+    call_count = {"value": 0}
+
+    def _factory(*args, **kwargs) -> _FakeProc:
+        call_count["value"] += 1
+        return _FakeProc(stdout=io.StringIO(""), stderr=io.StringIO(""), returncode=7)
+
+    monkeypatch.setattr(subprocess, "Popen", _factory)
+    monkeypatch.setenv("OPENCODE_MAX_ATTEMPTS", "3")
+
+    with pytest.raises(SystemExit) as exc:
+        _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
+
+    assert exc.value.code == 7
+    assert call_count["value"] == 1

@@ -52,6 +52,9 @@ def _extract_payload_candidates(text: str) -> list[str]:
     return _RESULT_BLOCK_RE.findall(text)
 
 
+_BEGIN_ONLY_RE = re.compile(r"^[ \t]*AI_RESULT_BEGIN[ \t]*\r?\n", re.MULTILINE)
+
+
 def _strip_markdown_code_block(text: str) -> str:
     code_block = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
     if code_block:
@@ -68,6 +71,40 @@ def _try_parse_payload(raw_payload: str) -> dict[str, object] | None:
         if isinstance(loaded, dict):
             return loaded
     return None
+
+
+def _try_parse_incomplete_marker_payload(search_text: str) -> dict[str, object] | None:
+    begin_matches = list(_BEGIN_ONLY_RE.finditer(search_text))
+    if not begin_matches:
+        return None
+
+    tail = search_text[begin_matches[-1].end() :].strip()
+    if not tail:
+        return None
+
+    normalized_tail = _strip_markdown_code_block(tail)
+    parsed = _try_parse_payload(normalized_tail)
+    if parsed is not None:
+        return parsed
+
+    try:
+        decoded, _ = json.JSONDecoder().raw_decode(normalized_tail)
+    except json.JSONDecodeError:
+        return None
+
+    if isinstance(decoded, dict):
+        return decoded
+    return None
+
+
+def _has_unclosed_tail_begin(search_text: str) -> bool:
+    begin_matches = list(_BEGIN_ONLY_RE.finditer(search_text))
+    if not begin_matches:
+        return False
+    end_matches = list(re.finditer(r"^[ \t]*AI_RESULT_END[ \t]*\r?\n?", search_text, re.MULTILINE))
+    if not end_matches:
+        return True
+    return begin_matches[-1].start() > end_matches[-1].start()
 
 
 
@@ -117,6 +154,25 @@ def _is_jsonl_event_stream(raw_stdout: str) -> bool:
     return False
 
 
+def _get_max_attempts() -> int:
+    raw = os.environ.get("OPENCODE_MAX_ATTEMPTS", "2")
+    try:
+        value = int(raw)
+    except ValueError:
+        return 2
+    return value if value >= 1 else 1
+
+
+def _is_retriable_parse_error(exc: SystemExit) -> bool:
+    code = exc.code
+    if not isinstance(code, str):
+        return False
+    return code in {
+        "Could not find AI_RESULT_BEGIN/AI_RESULT_END JSON payload.",
+        "Failed to parse JSON between AI_RESULT markers.",
+    }
+
+
 def _parse_result(combined: str, *, is_jsonl: bool) -> dict[str, object]:
     """从 agent 输出中提取 AI_RESULT 标记内的 JSON。
 
@@ -128,7 +184,16 @@ def _parse_result(combined: str, *, is_jsonl: bool) -> dict[str, object]:
         search_text = combined
 
     matches = _extract_payload_candidates(search_text)
+
+    if _has_unclosed_tail_begin(search_text):
+        incomplete_payload = _try_parse_incomplete_marker_payload(search_text)
+        if incomplete_payload is not None:
+            return incomplete_payload
+
     if not matches:
+        incomplete_payload = _try_parse_incomplete_marker_payload(search_text)
+        if incomplete_payload is not None:
+            return incomplete_payload
         raise SystemExit("Could not find AI_RESULT_BEGIN/AI_RESULT_END JSON payload.")
 
     payload: dict[str, object] | None = None
@@ -161,51 +226,68 @@ def main() -> None:
     env = os.environ.copy()
     env.setdefault("CI", "1")
 
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        env=env,
-    )
-
-    stdout_buf: list[str] = []
-    stderr_buf: list[str] = []
-
-    # stderr 用独立线程读取，避免与 stdout 顺序读取时死锁
-    stderr_thread = threading.Thread(
-        target=_stream_pipe,
-        args=(proc.stderr,),
-        kwargs={"dest": sys.stderr, "buf": stderr_buf},
-    )
-    stderr_thread.start()
-
-    assert proc.stdout is not None
-    _stream_pipe(proc.stdout, dest=sys.stdout, buf=stdout_buf)
-
-    stderr_thread.join()
-    returncode = proc.wait()
-
-    raw_stdout = "".join(stdout_buf)
-    raw_stderr = "".join(stderr_buf)
-
-    is_jsonl = _is_jsonl_event_stream(raw_stdout)
-
-    if is_jsonl:
-        combined_for_log = strip_ansi(raw_stdout + "\n" + raw_stderr)
-        combined_for_parse = raw_stdout
-    else:
-        combined_for_log = strip_ansi(raw_stdout + "\n" + raw_stderr)
-        combined_for_parse = combined_for_log
-
+    max_attempts = _get_max_attempts()
     raw_log_path = Path(args.output_file).with_suffix(".raw.txt")
-    raw_log_path.write_text(combined_for_log, encoding="utf-8")
+    attempt_logs: list[str] = []
+    last_parse_error: SystemExit | None = None
 
-    if returncode != 0:
-        raise SystemExit(returncode)
+    for attempt in range(1, max_attempts + 1):
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
 
-    payload = _parse_result(combined_for_parse, is_jsonl=is_jsonl)
-    write_json(args.output_file, payload, indent=2)
+        stdout_buf: list[str] = []
+        stderr_buf: list[str] = []
+
+        stderr_thread = threading.Thread(
+            target=_stream_pipe,
+            args=(proc.stderr,),
+            kwargs={"dest": sys.stderr, "buf": stderr_buf},
+        )
+        stderr_thread.start()
+
+        assert proc.stdout is not None
+        _stream_pipe(proc.stdout, dest=sys.stdout, buf=stdout_buf)
+
+        stderr_thread.join()
+        returncode = proc.wait()
+
+        raw_stdout = "".join(stdout_buf)
+        raw_stderr = "".join(stderr_buf)
+
+        is_jsonl = _is_jsonl_event_stream(raw_stdout)
+
+        if is_jsonl:
+            combined_for_log = strip_ansi(raw_stdout + "\n" + raw_stderr)
+            combined_for_parse = raw_stdout
+        else:
+            combined_for_log = strip_ansi(raw_stdout + "\n" + raw_stderr)
+            combined_for_parse = combined_for_log
+
+        attempt_logs.append(f"=== attempt {attempt}/{max_attempts} ===\n{combined_for_log}")
+        raw_log_path.write_text("\n\n".join(attempt_logs), encoding="utf-8")
+
+        if returncode != 0:
+            raise SystemExit(returncode)
+
+        try:
+            payload = _parse_result(combined_for_parse, is_jsonl=is_jsonl)
+        except SystemExit as exc:
+            last_parse_error = exc
+            if attempt < max_attempts and _is_retriable_parse_error(exc):
+                continue
+            raise
+
+        write_json(args.output_file, payload, indent=2)
+        return
+
+    if last_parse_error is not None:
+        raise last_parse_error
+    raise SystemExit("Could not parse opencode output.")
 
 
 if __name__ == "__main__":
