@@ -52,10 +52,13 @@ _ENVELOPE_OUTPUT_EPILOGUE = f"""CRITICAL: Output ONLY one compact JSON object co
 
 
 def _protocol_mode() -> str:
+    """Return ACE_RESULT_PROTOCOL_MODE; default is 'legacy'. Raises ValueError for unknown values."""
     mode = os.environ.get("ACE_RESULT_PROTOCOL_MODE", "legacy").strip().lower()
     valid = {"legacy", "dual-read", "strict-envelope"}
     if mode not in valid:
-        raise ValueError(f"Unknown ACE_RESULT_PROTOCOL_MODE: {mode!r}. Valid: {sorted(valid)}")
+        raise ValueError(
+            f"Unknown ACE_RESULT_PROTOCOL_MODE: {mode!r}. Valid: {sorted(valid)}"
+        )
     return mode
 
 
@@ -85,7 +88,9 @@ def _build_history_section(pr_meta: dict[str, Any]) -> str:
         decision = review.get("decision", "UNKNOWN")
         summary = review.get("summary", "")[:80]
         blocking = review.get("blocking_count", 0)
-        lines.append(f"- Review#{round_num}: {decision} - {summary}... ({blocking} blocking issues)")
+        lines.append(
+            f"- Review#{round_num}: {decision} - {summary}... ({blocking} blocking issues)"
+        )
 
     for fix in fix_history[-3:]:
         round_num = fix.get("round", "?")
@@ -451,7 +456,9 @@ def main() -> None:
             )
         else:
             if not args.issue_file or not args.fields_file or not args.triage_file:
-                parser.error("fix mode requires --issue-file --fields-file --triage-file")
+                parser.error(
+                    "fix mode requires --issue-file --fields-file --triage-file"
+                )
             prompt, gov = _build_fix_prompt(
                 issue=read_json(args.issue_file),
                 fields=read_json(args.fields_file),
