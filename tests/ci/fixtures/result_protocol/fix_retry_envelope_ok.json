@@ -1,0 +1,24 @@
+{
+  "protocol_version": "result-envelope.v1",
+  "mode": "fix",
+  "status": "ok",
+  "result": {
+    "summary": "修复评审指出的空列表分支遗漏",
+    "changed_files": [
+      "src/ui/profile_card.ts"
+    ],
+    "verification": [
+      {
+        "command": "PYTHONPATH=. python -m pytest tests/ui/test_profile_card.py -q",
+        "result": "pass",
+        "details": "重试轮次回归测试通过"
+      }
+    ],
+    "remaining_risks": [
+      "头像服务超时仍依赖上游重试"
+    ]
+  },
+  "diagnostics": {
+    "attempt": 2
+  }
+}

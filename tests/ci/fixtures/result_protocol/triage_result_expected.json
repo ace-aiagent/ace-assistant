@@ -1,0 +1,14 @@
+{
+  "verdict": "CONFIRMED_BUG",
+  "reason": "登录页面在空头像地址时崩溃",
+  "confidence": "high",
+  "suspected_files": [
+    "src/ui/profile_card.ts"
+  ],
+  "fix_strategy": "在渲染头像前补充空值处理并回退默认头像",
+  "verification_plan": [
+    "运行头像渲染单测",
+    "手工验证空头像用户页面可加载"
+  ],
+  "branch_slug": "fix-profile-empty-avatar"
+}

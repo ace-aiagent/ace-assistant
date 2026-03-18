@@ -1,0 +1,25 @@
+{
+  "protocol_version": "result-envelope.v1",
+  "mode": "fix",
+  "status": "ok",
+  "result": {
+    "summary": "为空头像场景增加空值保护并更新断言",
+    "changed_files": [
+      "src/ui/profile_card.ts",
+      "tests/ui/test_profile_card.py"
+    ],
+    "verification": [
+      {
+        "command": "PYTHONPATH=. python -m pytest tests/ui/test_profile_card.py -q",
+        "result": "pass",
+        "details": "空头像渲染用例通过"
+      }
+    ],
+    "followups": [
+      "补充 e2e 覆盖头像加载失败场景"
+    ]
+  },
+  "diagnostics": {
+    "attempt": 1
+  }
+}
