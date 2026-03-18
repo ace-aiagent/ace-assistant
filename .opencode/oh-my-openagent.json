@@ -4,6 +4,10 @@
         "sisyphus": {
             "model": "bailian-coding-plan/kimi-k2.5"
         },
+        "hephaestus": {
+            "model": "github-copilot/gpt-5.3-codex",
+            "variant": "medium"
+        },
         "librarian": {
             "model": "bailian-coding-plan/MiniMax-M2.5"
         },
