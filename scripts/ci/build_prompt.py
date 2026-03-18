@@ -10,7 +10,7 @@ from typing import Any
 
 from scripts.ci._config import get_environment_block, load_ace_config
 from scripts.ci._io_utils import read_json
-from scripts.ci.prompt_governor import govern
+from scripts.ci.prompt_governor import GoverningResult, govern
 from scripts.ci.result_protocol import PROTOCOL_VERSION
 
 
@@ -52,8 +52,12 @@ _ENVELOPE_OUTPUT_EPILOGUE = f"""CRITICAL: Output ONLY one compact JSON object co
 
 
 def _protocol_mode() -> str:
-    """Return ACE_RESULT_PROTOCOL_MODE; default is 'legacy'."""
-    return os.environ.get("ACE_RESULT_PROTOCOL_MODE", "legacy").strip().lower()
+    """Return ACE_RESULT_PROTOCOL_MODE; default is 'legacy'. Raises ValueError for unknown values."""
+    mode = os.environ.get("ACE_RESULT_PROTOCOL_MODE", "legacy").strip().lower()
+    valid = {"legacy", "dual-read", "strict-envelope"}
+    if mode not in valid:
+        raise ValueError(f"Unknown ACE_RESULT_PROTOCOL_MODE: {mode!r}. Valid: {sorted(valid)}")
+    return mode
 
 
 def _output_preamble() -> str:
@@ -70,7 +74,7 @@ def _output_epilogue(mode: str) -> str:
 
 def _build_triage_prompt(
     *, issue: dict[str, Any], fields: dict[str, Any], config_path: str | None = None
-) -> str:
+) -> tuple[str, GoverningResult]:
     issue_number = os.environ["ISSUE_NUMBER"]
     base_branch = os.environ["BASE_BRANCH"]
     repo_name = os.environ["REPO_NAME"]
@@ -136,7 +140,7 @@ def _build_triage_prompt(
           }}
 
           {_output_epilogue("triage")}"""
-    return prompt
+    return prompt, gov
 
 
 def _build_fix_prompt(
@@ -145,7 +149,7 @@ def _build_fix_prompt(
     fields: dict[str, Any],
     triage: dict[str, Any],
     config_path: str | None = None,
-) -> str:
+) -> tuple[str, GoverningResult]:
     repo_name = os.environ["REPO_NAME"]
     issue_number = os.environ["ISSUE_NUMBER"]
     base_branch = os.environ["BASE_BRANCH"]
@@ -212,7 +216,7 @@ def _build_fix_prompt(
           IMPORTANT: Keep the JSON compact. Each "details" value must be a short one-line note (≤80 chars), NOT full command output.
 
           {_output_epilogue("fix")}"""
-    return prompt
+    return prompt, gov
 
 
 def _build_fix_loop_prompt(
@@ -221,7 +225,7 @@ def _build_fix_loop_prompt(
     pr_meta: dict[str, Any],
     review_ctx: dict[str, Any],
     config_path: str | None = None,
-) -> str:
+) -> tuple[str, GoverningResult]:
     repo_name = os.environ["REPO_NAME"]
     pr_number = os.environ["PR_NUMBER"]
     next_round = os.environ["NEXT_ROUND"]
@@ -295,12 +299,12 @@ def _build_fix_loop_prompt(
           IMPORTANT: Keep the JSON compact. Each "details" value must be a short one-line note (≤80 chars), NOT full command output.
 
           {_output_epilogue("fix")}"""
-    return prompt
+    return prompt, gov
 
 
 def _build_review_prompt(
     *, pr: dict[str, Any], pr_meta: dict[str, Any], config_path: str | None = None
-) -> str:
+) -> tuple[str, GoverningResult]:
     repo_name = os.environ["REPO_NAME"]
     pr_number = os.environ["PR_NUMBER"]
     extra_prompt = os.environ.get("EXTRA_PROMPT", "").strip()
@@ -377,7 +381,7 @@ def _build_review_prompt(
           }}
 
           {_output_epilogue("review")}"""
-    return prompt
+    return prompt, gov
 
 
 def main() -> None:
@@ -396,11 +400,12 @@ def main() -> None:
     mode = args.mode
 
     prompt = ""
+    gov: GoverningResult | None = None
 
     if mode == "triage":
         if not args.issue_file or not args.fields_file:
             parser.error("triage 模式需要 --issue-file 和 --fields-file")
-        prompt = _build_triage_prompt(
+        prompt, gov = _build_triage_prompt(
             issue=read_json(args.issue_file),
             fields=read_json(args.fields_file),
             config_path=args.config_path,
@@ -412,7 +417,7 @@ def main() -> None:
                 parser.error(
                     "fix retry 模式需要 --pr-file --pr-meta-file --review-context-file"
                 )
-            prompt = _build_fix_loop_prompt(
+            prompt, gov = _build_fix_loop_prompt(
                 pr=read_json(args.pr_file),
                 pr_meta=read_json(args.pr_meta_file),
                 review_ctx=read_json(args.review_context_file),
@@ -421,7 +426,7 @@ def main() -> None:
         else:
             if not args.issue_file or not args.fields_file or not args.triage_file:
                 parser.error("fix 模式需要 --issue-file --fields-file --triage-file")
-            prompt = _build_fix_prompt(
+            prompt, gov = _build_fix_prompt(
                 issue=read_json(args.issue_file),
                 fields=read_json(args.fields_file),
                 triage=read_json(args.triage_file),
@@ -431,13 +436,22 @@ def main() -> None:
     elif mode == "review":
         if not args.pr_file or not args.pr_meta_file:
             parser.error("review 模式需要 --pr-file --pr-meta-file")
-        prompt = _build_review_prompt(
+        prompt, gov = _build_review_prompt(
             pr=read_json(args.pr_file),
             pr_meta=read_json(args.pr_meta_file),
             config_path=args.config_path,
         )
 
     Path(args.output).write_text(prompt, encoding="utf-8")
+
+    if gov is not None:
+        trim_meta = {
+            "context_trimmed": gov.total_input_bytes > gov.total_output_bytes,
+            "trim_report": gov.trim_report,
+        }
+        Path(args.output + ".trim_meta.json").write_text(
+            json.dumps(trim_meta, ensure_ascii=False), encoding="utf-8"
+        )
 
 
 if __name__ == "__main__":

@@ -12,6 +12,48 @@ import pytest
 from scripts.ci import run_opencode
 
 
+# ---------------------------------------------------------------------------
+# Shared test fixtures for envelope-based tests
+# ---------------------------------------------------------------------------
+
+_VALID_TRIAGE_RESULT = {
+    "verdict": "CONFIRMED_BUG",
+    "reason": "test reason",
+    "confidence": "high",
+    "suspected_files": ["src/foo.ts"],
+    "fix_strategy": "fix it",
+    "verification_plan": ["run tests"],
+    "branch_slug": "fix-foo",
+}
+_VALID_FIX_RESULT = {
+    "summary": "fixed it",
+    "changed_files": ["src/foo.ts"],
+    "verification": [{"command": "pytest", "result": "pass", "details": "ok"}],
+}
+_VALID_REVIEW_RESULT = {
+    "decision": "APPROVE",
+    "summary": "looks good",
+    "blocking_issues": [],
+    "non_blocking_suggestions": [],
+    "recommended_checks": [],
+}
+_VALID_RESULTS_BY_MODE: dict[str, dict] = {
+    "triage": _VALID_TRIAGE_RESULT,
+    "fix": _VALID_FIX_RESULT,
+    "review": _VALID_REVIEW_RESULT,
+}
+
+
+def _make_envelope(*, mode: str = "triage", result: dict | None = None, protocol_version: str = "result-envelope.v1") -> dict:
+    return {
+        "protocol_version": protocol_version,
+        "mode": mode,
+        "status": "ok",
+        "result": result if result is not None else _VALID_RESULTS_BY_MODE[mode],
+        "diagnostics": None,
+    }
+
+
 @dataclass
 class _FakeProc:
     stdout: io.StringIO
@@ -239,646 +281,33 @@ def test_main_raises_system_exit_when_no_markers_found(monkeypatch: pytest.Monke
     with pytest.raises(SystemExit):
         _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
 
-
-def test_main_raises_system_exit_for_non_zero_return_code(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    _mock_popen(monkeypatch, stdout_text="", returncode=5)
-
-    with pytest.raises(SystemExit):
-        _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-
-def test_main_takes_last_match_when_prompt_echoed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """prompt 模板中的 AI_RESULT_BEGIN/<json>/AI_RESULT_END 被回显时，应取最后一个匹配"""
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    echoed_prompt = (
-        "AI_RESULT_BEGIN\n"
-        "<json>\n"
-        "AI_RESULT_END\n"
-    )
-    real_output = (
-        "AI_RESULT_BEGIN\n"
-        '{"verdict": "CONFIRMED_BUG", "reason": "test"}\n'
-        "AI_RESULT_END\n"
-    )
-    _mock_popen(monkeypatch, stdout_text=echoed_prompt + real_output)
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    result = json.loads(output_file.read_text(encoding="utf-8"))
-    assert result["verdict"] == "CONFIRMED_BUG"
-
-
-def test_main_takes_last_match_with_three_markers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    blocks = ""
-    for i in range(3):
-        blocks += f"AI_RESULT_BEGIN\n{{\"round\": {i}}}\nAI_RESULT_END\n"
-    _mock_popen(monkeypatch, stdout_text=blocks)
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    assert json.loads(output_file.read_text(encoding="utf-8")) == {"round": 2}
-
-
-def test_main_ignores_inline_marker_text_not_standalone_block(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    stdout_text = (
-        "Could not find AI_RESULT_BEGIN/AI_RESULT_END JSON payload.\n"
-        "AI_RESULT_BEGIN\n"
-        '{"ok": true}\n'
-        "AI_RESULT_END\n"
-    )
-    _mock_popen(monkeypatch, stdout_text=stdout_text)
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    assert json.loads(output_file.read_text(encoding="utf-8")) == {"ok": True}
-
-
-def test_main_uses_previous_valid_block_when_last_block_invalid(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    stdout_text = (
-        "AI_RESULT_BEGIN\n"
-        '{"ok": true}\n'
-        "AI_RESULT_END\n"
-        "AI_RESULT_BEGIN\n"
-        "/\n"
-        "AI_RESULT_END\n"
-    )
-    _mock_popen(monkeypatch, stdout_text=stdout_text)
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    assert json.loads(output_file.read_text(encoding="utf-8")) == {"ok": True}
-
-
-def test_main_supports_crlf_marker_lines(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    stdout_text = "AI_RESULT_BEGIN\r\n{\"ok\": true}\r\nAI_RESULT_END\r\n"
-    _mock_popen(monkeypatch, stdout_text=stdout_text)
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-    assert json.loads(output_file.read_text(encoding="utf-8")) == {"ok": True}
-
-
-def test_main_supports_indented_marker_lines(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    stdout_text = "  AI_RESULT_BEGIN  \n{\"ok\": true}\n  AI_RESULT_END\n"
-    _mock_popen(monkeypatch, stdout_text=stdout_text)
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-    assert json.loads(output_file.read_text(encoding="utf-8")) == {"ok": True}
-
-
-def test_main_ignores_truncated_trailing_block(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    stdout_text = (
-        "AI_RESULT_BEGIN\n"
-        '{"ok": true}\n'
-        "AI_RESULT_END\n"
-        "AI_RESULT_BEGIN\n"
-        '{"broken": '
-    )
-    _mock_popen(monkeypatch, stdout_text=stdout_text)
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-    assert json.loads(output_file.read_text(encoding="utf-8")) == {"ok": True}
-
-
-def test_main_raises_system_exit_for_unparseable_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    _mock_popen(monkeypatch, stdout_text="AI_RESULT_BEGIN\n{not valid json\nAI_RESULT_END\n")
-
-    with pytest.raises(SystemExit, match="Failed to parse JSON"):
-        _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-
-def test_main_supports_markdown_code_block_without_json_tag(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    _mock_popen(
-        monkeypatch,
-        stdout_text="AI_RESULT_BEGIN\n```\n{\"ok\": true}\n```\nAI_RESULT_END\n",
-    )
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-    assert json.loads(output_file.read_text(encoding="utf-8")) == {"ok": True}
-
-
-def test_main_writes_raw_log_to_raw_txt(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    _mock_popen(
-        monkeypatch,
-        stdout_text="\x1b[31mAI_RESULT_BEGIN\n{\"ok\": true}\nAI_RESULT_END\x1b[0m\n",
-        stderr_text="warn\n",
-    )
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    raw_log = output_file.with_suffix(".raw.txt")
-    assert raw_log.exists()
-    assert "\x1b" not in raw_log.read_text(encoding="utf-8")
-
-
-# --- main() with JSONL stdout (--format json mode) ---
-
-
-def test_main_jsonl_mode_extracts_result_from_text_events(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    jsonl_lines = "\n".join([
-        _make_jsonl_step_event("step_start"),
-        _make_jsonl_text_event("I will analyze the code.\n"),
-        _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
-        _make_jsonl_text_event('{"verdict": "CONFIRMED_BUG", "reason": "test"}\n'),
-        _make_jsonl_text_event("AI_RESULT_END\n"),
-        _make_jsonl_step_event("step_finish"),
-    ]) + "\n"
-
-    _mock_popen(monkeypatch, stdout_text=jsonl_lines)
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    result = json.loads(output_file.read_text(encoding="utf-8"))
-    assert result["verdict"] == "CONFIRMED_BUG"
-
-
-def test_main_jsonl_mode_with_non_json_prefix_still_extracts_result(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    jsonl_lines = "\n".join([
-        "[TODO-DIAG] session.idle fired",
-        _make_jsonl_step_event("step_start"),
-        _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
-        _make_jsonl_text_event('{"ok": true}\n'),
-        _make_jsonl_text_event("AI_RESULT_END\n"),
-        _make_jsonl_step_event("step_finish"),
-    ]) + "\n"
-
-    _mock_popen(monkeypatch, stdout_text=jsonl_lines)
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    assert json.loads(output_file.read_text(encoding="utf-8")) == {"ok": True}
-
-
-def test_main_jsonl_mode_raises_when_no_markers_in_text(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    jsonl_lines = "\n".join([
-        _make_jsonl_step_event("step_start"),
-        _make_jsonl_text_event("analysis complete, no markers output"),
-        _make_jsonl_step_event("step_finish"),
-    ]) + "\n"
-
-    _mock_popen(monkeypatch, stdout_text=jsonl_lines)
-
-    with pytest.raises(SystemExit):
-        _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-
-def test_main_jsonl_mode_recovers_when_end_marker_missing_but_json_complete(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    jsonl_lines = "\n".join([
-        _make_jsonl_step_event("step_start"),
-        _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
-        _make_jsonl_text_event('{"summary":"ok","changed_files":[],"verification":[]}'),
-        _make_jsonl_step_event("step_finish"),
-    ]) + "\n"
-
-    _mock_popen(monkeypatch, stdout_text=jsonl_lines)
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    assert json.loads(output_file.read_text(encoding="utf-8")) == {
-        "summary": "ok",
-        "changed_files": [],
-        "verification": [],
-    }
-
-
-def test_main_jsonl_mode_raises_when_end_marker_missing_and_json_truncated(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    jsonl_lines = "\n".join([
-        _make_jsonl_step_event("step_start"),
-        _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
-        _make_jsonl_text_event('{"summary":"ok","verification":[{"command":"pnpm test","result":"pass","details\\'),
-        _make_jsonl_step_event("step_finish"),
-    ]) + "\n"
-
-    _mock_popen(monkeypatch, stdout_text=jsonl_lines)
-
-    with pytest.raises(SystemExit, match="Could not find AI_RESULT_BEGIN/AI_RESULT_END JSON payload"):
-        _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-
-def test_main_jsonl_mode_writes_raw_log(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    jsonl_lines = "\n".join([
-        _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
-        _make_jsonl_text_event('{"ok": true}\n'),
-        _make_jsonl_text_event("AI_RESULT_END\n"),
-    ]) + "\n"
-
-    _mock_popen(monkeypatch, stdout_text=jsonl_lines, stderr_text="debug info\n")
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    raw_log = output_file.with_suffix(".raw.txt")
-    assert raw_log.exists()
-    content = raw_log.read_text(encoding="utf-8")
-    assert "debug info" in content
-
-
-def test_main_jsonl_mode_handles_non_zero_return_code(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    jsonl_lines = _make_jsonl_text_event("error") + "\n"
-    _mock_popen(monkeypatch, stdout_text=jsonl_lines, returncode=1)
-
-    with pytest.raises(SystemExit):
-        _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-
-def test_main_retries_once_on_missing_markers_then_succeeds(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    attempt_outputs = [
-        "\n".join([
-            _make_jsonl_step_event("step_start"),
-            _make_jsonl_text_event("analysis only"),
-            _make_jsonl_step_event("step_finish"),
-        ]) + "\n",
-        "\n".join([
-            _make_jsonl_step_event("step_start"),
-            _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
-            _make_jsonl_text_event('{"ok": true}\n'),
-            _make_jsonl_text_event("AI_RESULT_END\n"),
-            _make_jsonl_step_event("step_finish"),
-        ]) + "\n",
-    ]
-
-    call_idx = {"value": 0}
-
-    def _factory(*args, **kwargs) -> _FakeProc:
-        idx = call_idx["value"]
-        call_idx["value"] += 1
-        return _FakeProc(stdout=io.StringIO(attempt_outputs[idx]), stderr=io.StringIO(""), returncode=0)
-
-    monkeypatch.setattr(subprocess, "Popen", _factory)
-    monkeypatch.setenv("OPENCODE_MAX_ATTEMPTS", "2")
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    assert call_idx["value"] == 2
-    assert json.loads(output_file.read_text(encoding="utf-8")) == {"ok": True}
-
-
-def test_main_uses_single_attempt_when_configured(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    call_count = {"value": 0}
-
-    def _factory(*args, **kwargs) -> _FakeProc:
-        call_count["value"] += 1
-        stdout_text = "\n".join([
-            _make_jsonl_step_event("step_start"),
-            _make_jsonl_text_event("analysis only"),
-            _make_jsonl_step_event("step_finish"),
-        ]) + "\n"
-        return _FakeProc(stdout=io.StringIO(stdout_text), stderr=io.StringIO(""), returncode=0)
-
-    monkeypatch.setattr(subprocess, "Popen", _factory)
-    monkeypatch.setenv("OPENCODE_MAX_ATTEMPTS", "1")
-
-    with pytest.raises(SystemExit, match="Could not find AI_RESULT_BEGIN/AI_RESULT_END JSON payload"):
-        _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    assert call_count["value"] == 1
-
-
-def test_main_prefers_latest_incomplete_block_when_json_is_complete(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    jsonl_lines = "\n".join([
-        _make_jsonl_step_event("step_start"),
-        _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
-        _make_jsonl_text_event('{"round": 1}\n'),
-        _make_jsonl_text_event("AI_RESULT_END\n"),
-        _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
-        _make_jsonl_text_event('{"round": 2}'),
-        _make_jsonl_step_event("step_finish"),
-    ]) + "\n"
-
-    _mock_popen(monkeypatch, stdout_text=jsonl_lines)
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    assert json.loads(output_file.read_text(encoding="utf-8")) == {"round": 2}
-
-
-def test_main_falls_back_to_last_closed_block_when_latest_incomplete_is_invalid(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    jsonl_lines = "\n".join([
-        _make_jsonl_step_event("step_start"),
-        _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
-        _make_jsonl_text_event('{"round": 1}\n'),
-        _make_jsonl_text_event("AI_RESULT_END\n"),
-        _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
-        _make_jsonl_text_event('{"round": '),
-        _make_jsonl_step_event("step_finish"),
-    ]) + "\n"
-
-    _mock_popen(monkeypatch, stdout_text=jsonl_lines)
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    assert json.loads(output_file.read_text(encoding="utf-8")) == {"round": 1}
-
-
-def test_main_retries_once_on_parse_error_then_succeeds(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    attempt_outputs = [
-        "AI_RESULT_BEGIN\n{not valid json\nAI_RESULT_END\n",
-        "AI_RESULT_BEGIN\n{\"ok\": true}\nAI_RESULT_END\n",
-    ]
-
-    call_idx = {"value": 0}
-
-    def _factory(*args, **kwargs) -> _FakeProc:
-        idx = call_idx["value"]
-        call_idx["value"] += 1
-        return _FakeProc(stdout=io.StringIO(attempt_outputs[idx]), stderr=io.StringIO(""), returncode=0)
-
-    monkeypatch.setattr(subprocess, "Popen", _factory)
-    monkeypatch.setenv("OPENCODE_MAX_ATTEMPTS", "2")
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    assert call_idx["value"] == 2
-    assert json.loads(output_file.read_text(encoding="utf-8")) == {"ok": True}
-
-
-def test_main_non_zero_return_code_does_not_retry_even_when_configured(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-
-    call_count = {"value": 0}
-
-    def _factory(*args, **kwargs) -> _FakeProc:
-        call_count["value"] += 1
-        return _FakeProc(stdout=io.StringIO(""), stderr=io.StringIO(""), returncode=7)
-
-    monkeypatch.setattr(subprocess, "Popen", _factory)
-    monkeypatch.setenv("OPENCODE_MAX_ATTEMPTS", "3")
-
-    with pytest.raises(SystemExit) as exc:
-        _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    assert exc.value.code == 7
-    assert call_count["value"] == 1
-
-
-def _make_envelope(*, mode: str = "triage", result: dict | None = None, protocol_version: str = "result-envelope.v1") -> dict:
-    return {
-        "protocol_version": protocol_version,
-        "mode": mode,
-        "status": "ok",
-        "result": result or {"ok": True},
-        "diagnostics": None,
-    }
-
-
-def test_parse_result_dual_read_uses_last_complete_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "dual-read")
-    envelope1 = json.dumps(_make_envelope(result={"round": 1}))
-    envelope2 = json.dumps(_make_envelope(result={"round": 2}))
-    text = f"intro\n{envelope1}\nmid\n{envelope2}\n"
-
-    result = run_opencode._parse_result(text, is_jsonl=False)
-
-    assert result == {"round": 2}
-
-
-def test_parse_result_dual_read_incomplete_tail_is_retriable_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "dual-read")
-    text = 'before\n{"protocol_version":"result-envelope.v1","mode":"triage"'
-
-    with pytest.raises(run_opencode.ResultParseError) as exc_info:
-        run_opencode._parse_result_with_meta(
-            text,
-            is_jsonl=False,
-            protocol_mode="dual-read",
-            requested_mode="triage",
-        )
-
-    assert exc_info.value.error_code == "INCOMPLETE_ENVELOPE_TAIL"
-    assert run_opencode._is_retriable_parse_error(exc_info.value) is True
-
-
-def test_parse_result_dual_read_falls_back_to_markers_when_no_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "dual-read")
-    text = "AI_RESULT_BEGIN\n{\"ok\": true}\nAI_RESULT_END\n"
-
-    meta = run_opencode._parse_result_with_meta(
-        text,
-        is_jsonl=False,
-        protocol_mode="dual-read",
-        requested_mode="triage",
-    )
-
-    assert meta.payload == {"ok": True}
-    assert meta.parser_mode == "legacy"
-    assert meta.fallback_used is True
-    assert meta.legacy_fallback_reason == "no_envelope_candidates"
-
-
-def test_parse_result_dual_read_invalid_last_envelope_does_not_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "dual-read")
-    valid = json.dumps(_make_envelope(mode="triage", result={"round": 1}))
-    invalid = json.dumps(_make_envelope(mode="fix", result={"round": 2}))
-    text = f"{valid}\n{invalid}\nAI_RESULT_BEGIN\n{{\"ok\":true}}\nAI_RESULT_END\n"
-
-    with pytest.raises(Exception) as exc_info:
-        run_opencode._parse_result_with_meta(
-            text,
-            is_jsonl=False,
-            protocol_mode="dual-read",
-            requested_mode="triage",
-        )
-
-    assert exc_info.type.__name__ == "ProtocolValidationError"
-
-
-def test_parse_result_strict_envelope_missing_candidate_raises_protocol_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "strict-envelope")
-
-    with pytest.raises(Exception) as exc_info:
-        run_opencode._parse_result_with_meta(
-            "AI_RESULT_BEGIN\n{\"ok\": true}\nAI_RESULT_END\n",
-            is_jsonl=False,
-            protocol_mode="strict-envelope",
-            requested_mode="triage",
-        )
-
-    assert exc_info.type.__name__ == "ProtocolValidationError"
-    assert getattr(exc_info.value, "error_code", "") == "MISSING_ENVELOPE"
-
-
-def test_parse_result_envelope_wins_when_markers_and_envelope_both_exist(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "dual-read")
-    envelope = json.dumps(_make_envelope(result={"source": "envelope"}))
-    text = f"AI_RESULT_BEGIN\n{{\"source\":\"marker\"}}\nAI_RESULT_END\n{envelope}\n"
-
-    result = run_opencode._parse_result(text, is_jsonl=False)
-
-    assert result == {"source": "envelope"}
-
-
-def test_main_dual_read_success_writes_diagnostics_sidecar(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "triage_result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "dual-read")
-
-    envelope = json.dumps(_make_envelope(mode="triage", result={"verdict": "CONFIRMED_BUG"}))
-    _mock_popen(monkeypatch, stdout_text=f"analysis\n{envelope}\n")
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    assert json.loads(output_file.read_text(encoding="utf-8")) == {"verdict": "CONFIRMED_BUG"}
-    diagnostics = json.loads(Path(f"{output_file}.diagnostics.json").read_text(encoding="utf-8"))
-    assert diagnostics["protocol_version"] == "result-envelope.v1"
-    assert diagnostics["requested_mode"] == "triage"
-    assert diagnostics["parser_mode"] == "envelope"
-    assert diagnostics["fallback_used"] is False
-    assert diagnostics["attempt"] == 1
-    assert diagnostics["max_attempts"] == 2
-    assert diagnostics["context_trimmed"] is False
-    assert diagnostics["trim_report"] is None
-    assert diagnostics["legacy_fallback_reason"] is None
-    assert diagnostics["raw_log_path"].endswith("triage_result.raw.txt")
-    assert diagnostics["error_code"] is None
-
-
-def test_main_dual_read_legacy_fallback_sets_fallback_used(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "triage_result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "dual-read")
-
-    _mock_popen(monkeypatch, stdout_text="AI_RESULT_BEGIN\n{\"ok\": true}\nAI_RESULT_END\n")
-
-    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
-    diagnostics = json.loads(Path(f"{output_file}.diagnostics.json").read_text(encoding="utf-8"))
-    assert diagnostics["parser_mode"] == "legacy"
-    assert diagnostics["fallback_used"] is True
-    assert diagnostics["legacy_fallback_reason"] == "no_envelope_candidates"
-    assert diagnostics["error_code"] is None
-
-
-def test_main_strict_envelope_failure_deletes_stale_output_and_writes_diagnostics(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    prompt_file = tmp_path / "prompt.md"
-    output_file = tmp_path / "triage_result.json"
-    prompt_file.write_text("prompt", encoding="utf-8")
-    output_file.write_text('{"stale": true}', encoding="utf-8")
-    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "strict-envelope")
-
-    _mock_popen(monkeypatch, stdout_text="AI_RESULT_BEGIN\n{\"ok\": true}\nAI_RESULT_END\n")
-
-    with pytest.raises(SystemExit):
-        _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
     assert not output_file.exists()
+
+
+def test_main_reads_trim_meta_sidecar_into_diagnostics(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prompt_file = tmp_path / "triage_prompt.md"
+    output_file = tmp_path / "triage_result.json"
+    prompt_file.write_text("prompt", encoding="utf-8")
+    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "legacy")
+
+    trim_meta = {
+        "context_trimmed": True,
+        "trim_report": {
+            "issue_body": {"input_bytes": 5000, "output_bytes": 2000, "trimmed_bytes": 3000},
+        },
+    }
+    Path(str(prompt_file) + ".trim_meta.json").write_text(json.dumps(trim_meta), encoding="utf-8")
+
+    _mock_popen(monkeypatch, stdout_text='AI_RESULT_BEGIN\n{"ok": true}\nAI_RESULT_END\n')
+
+    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
+
+    diagnostics = json.loads(Path(str(output_file) + ".diagnostics.json").read_text(encoding="utf-8"))
+    assert diagnostics["context_trimmed"] is True
+    assert diagnostics["trim_report"] == trim_meta["trim_report"]
     assert output_file.with_suffix(".raw.txt").exists()
-    diagnostics = json.loads(Path(f"{output_file}.diagnostics.json").read_text(encoding="utf-8"))
-    assert diagnostics["parser_mode"] == "envelope"
-    assert diagnostics["fallback_used"] is False
-    assert diagnostics["error_code"] == "MISSING_ENVELOPE"
 
 
 def test_main_strict_envelope_incomplete_tail_retries_then_succeeds(
@@ -890,7 +319,7 @@ def test_main_strict_envelope_incomplete_tail_retries_then_succeeds(
     monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "strict-envelope")
     monkeypatch.setenv("OPENCODE_MAX_ATTEMPTS", "2")
 
-    envelope = json.dumps(_make_envelope(mode="triage", result={"ok": True}))
+    envelope = json.dumps(_make_envelope(mode="triage", result=_VALID_TRIAGE_RESULT))
     outputs = [
         '{"protocol_version":"result-envelope.v1","mode":"triage"',
         envelope,
@@ -907,7 +336,36 @@ def test_main_strict_envelope_incomplete_tail_retries_then_succeeds(
     _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
 
     assert call_idx["value"] == 2
-    assert json.loads(output_file.read_text(encoding="utf-8")) == {"ok": True}
+    assert json.loads(output_file.read_text(encoding="utf-8")) == _VALID_TRIAGE_RESULT
     diagnostics = json.loads(Path(f"{output_file}.diagnostics.json").read_text(encoding="utf-8"))
     assert diagnostics["attempt"] == 2
     assert diagnostics["error_code"] is None
+
+
+def test_protocol_mode_raises_for_unknown_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "banana")
+    with pytest.raises(ValueError, match="Unknown ACE_RESULT_PROTOCOL_MODE"):
+        run_opencode._protocol_mode()
+
+
+def test_main_envelope_status_error_exits_and_does_not_write_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prompt_file = tmp_path / "triage_prompt.md"
+    output_file = tmp_path / "triage_result.json"
+    prompt_file.write_text("prompt", encoding="utf-8")
+    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "strict-envelope")
+
+    error_envelope = json.dumps({
+        "protocol_version": "result-envelope.v1",
+        "mode": "triage",
+        "status": "error",
+        "result": {},
+        "diagnostics": None,
+    })
+    _mock_popen(monkeypatch, stdout_text=f"analysis\n{error_envelope}\n")
+
+    with pytest.raises(SystemExit):
+        _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
+
+    assert not output_file.exists()

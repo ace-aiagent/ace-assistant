@@ -73,6 +73,24 @@ def extract_output_file(run_script: str) -> str:
     return match.group(1)
 
 
+def get_build_prompt_step_indexes(steps: list[dict]) -> list[int]:
+    indexes: list[int] = []
+    for index, step in enumerate(steps):
+        run_script = step.get("run")
+        if isinstance(run_script, str) and "scripts.ci.build_prompt" in run_script:
+            indexes.append(index)
+    return indexes
+
+
+def get_dispatch_step_indexes(steps: list[dict]) -> list[int]:
+    indexes: list[int] = []
+    for index, step in enumerate(steps):
+        run_script = step.get("run")
+        if isinstance(run_script, str) and "gh workflow run" in run_script:
+            indexes.append(index)
+    return indexes
+
+
 def assert_run_opencode_steps_have_protocol_mode_env(steps: list[dict]) -> None:
     run_opencode_indexes = get_run_opencode_step_indexes(steps)
     assert run_opencode_indexes, "Expected at least one run_opencode step"
@@ -367,6 +385,59 @@ class TestProtocolRolloutControls:
                 "required": False,
                 "default": "",
             }
+
+    def test_ace_fix_build_prompt_steps_have_protocol_mode_env(self) -> None:
+        steps = get_job_steps("ace-fix.yml", "fix")
+        indexes = get_build_prompt_step_indexes(steps)
+
+        assert len(indexes) == 3, f"Expected 3 build_prompt steps, found {len(indexes)}"
+        for index in indexes:
+            step = steps[index]
+            env = step.get("env")
+            assert isinstance(env, dict), f"build_prompt step missing env: {step.get('name')}"
+            assert env.get("ACE_RESULT_PROTOCOL_MODE") == PROTOCOL_MODE_EXPRESSION
+
+    def test_ace_review_build_prompt_step_has_protocol_mode_env(self) -> None:
+        steps = get_job_steps("ace-review.yml", "review")
+        indexes = get_build_prompt_step_indexes(steps)
+
+        assert len(indexes) == 1, f"Expected 1 build_prompt step, found {len(indexes)}"
+        step = steps[indexes[0]]
+        env = step.get("env")
+        assert isinstance(env, dict), f"build_prompt step missing env: {step.get('name')}"
+        assert env.get("ACE_RESULT_PROTOCOL_MODE") == PROTOCOL_MODE_EXPRESSION
+
+    def test_ace_fix_dispatch_steps_forward_protocol_mode(self) -> None:
+        steps = get_job_steps("ace-fix.yml", "fix")
+        indexes = get_dispatch_step_indexes(steps)
+
+        assert len(indexes) == 2, f"Expected 2 dispatch steps, found {len(indexes)}"
+        for index in indexes:
+            run_script = steps[index].get("run", "")
+            assert "-f ace_protocol_mode=" in run_script, (
+                f"Dispatch step missing ace_protocol_mode forwarding:\n{run_script}"
+            )
+
+    def test_ace_review_dispatch_step_forwards_protocol_mode(self) -> None:
+        steps = get_job_steps("ace-review.yml", "review")
+        indexes = get_dispatch_step_indexes(steps)
+
+        assert len(indexes) == 1, f"Expected 1 dispatch step, found {len(indexes)}"
+        run_script = steps[indexes[0]].get("run", "")
+        assert "-f ace_protocol_mode=" in run_script, (
+            f"Dispatch step missing ace_protocol_mode forwarding:\n{run_script}"
+        )
+
+    def test_ace_review_fix_params_includes_protocol_mode(self) -> None:
+        content = (
+            get_project_root() / ".github" / "workflows" / "ace-review.yml"
+        ).read_text(encoding="utf-8")
+        assert 'ace_protocol_mode' in content and 'fix_params' in content, (
+            "fix_params JSON must include ace_protocol_mode key"
+        )
+        assert '"ace_protocol_mode"' in content or r'\"ace_protocol_mode\"' in content, (
+            "fix_params JSON must include ace_protocol_mode key"
+        )
 
 
 

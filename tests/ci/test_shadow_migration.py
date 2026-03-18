@@ -154,17 +154,15 @@ def test_shadow_contract_drift_detects_missing_review_decision() -> None:
     drifted_review = _load_fixture("review_envelope_ok.json")
     drifted_review["result"].pop("decision", None)
 
-    parsed = run_opencode._parse_result_with_meta(
-        json.dumps(drifted_review, ensure_ascii=False),
-        is_jsonl=False,
-        protocol_mode="strict-envelope",
-        requested_mode="review",
-    )
-
     with pytest.raises(ProtocolValidationError) as exc_info:
-        _assert_workflow_contract(parsed.payload, fixture_name="review_envelope_ok.json")
+        run_opencode._parse_result_with_meta(
+            json.dumps(drifted_review, ensure_ascii=False),
+            is_jsonl=False,
+            protocol_mode="strict-envelope",
+            requested_mode="review",
+        )
 
-    assert exc_info.value.error_code == "CONTRACT_DRIFT"
+    assert exc_info.value.error_code == "INVALID_RESULT_SCHEMA"
 
 
 def test_shadow_trim_report_contains_non_zero_trim_events() -> None:

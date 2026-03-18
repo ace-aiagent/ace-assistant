@@ -15,6 +15,27 @@ VALID_TOP_LEVEL_FIELDS = {
     "diagnostics",
 }
 
+_TRIAGE_REQUIRED_FIELDS = {"verdict", "reason", "confidence", "suspected_files", "fix_strategy", "verification_plan", "branch_slug"}
+_REVIEW_REQUIRED_FIELDS = {"decision", "summary", "blocking_issues", "non_blocking_suggestions", "recommended_checks"}
+_FIX_REQUIRED_FIELDS = {"summary", "changed_files", "verification"}
+
+
+def _validate_result_schema(mode: str, result: dict) -> None:
+    if mode == "triage":
+        required = _TRIAGE_REQUIRED_FIELDS
+    elif mode == "review":
+        required = _REVIEW_REQUIRED_FIELDS
+    elif mode == "fix":
+        required = _FIX_REQUIRED_FIELDS
+    else:
+        return
+    missing = required - set(result.keys())
+    if missing:
+        raise ProtocolValidationError(
+            "INVALID_RESULT_SCHEMA",
+            f"result 缺少必要字段: {sorted(missing)}",
+        )
+
 
 class ProtocolValidationError(ValueError):
     def __init__(self, error_code: str, message: str) -> None:
@@ -71,6 +92,9 @@ def validate_envelope(envelope: dict, requested_mode: str) -> None:
 
     if "result" not in envelope:
         raise ProtocolValidationError("MISSING_RESULT", "缺少 result")
+
+    if status == "ok" and isinstance(envelope["result"], dict):
+        _validate_result_schema(mode, envelope["result"])
 
     if "diagnostics" not in envelope:
         raise ProtocolValidationError("MISSING_DIAGNOSTICS", "缺少 diagnostics")

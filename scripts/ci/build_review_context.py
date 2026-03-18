@@ -10,7 +10,6 @@ from scripts.ci._io_utils import read_json
 
 
 SUMMARY_LIMIT_BYTES = 400
-BLOCKING_ISSUE_LIMIT = 5
 BLOCKING_ISSUE_TITLE_LIMIT_BYTES = 120
 BLOCKING_ISSUE_WHY_LIMIT_BYTES = 300
 BLOCKING_ISSUE_SUGGESTED_FIX_LIMIT_BYTES = 300
@@ -60,9 +59,9 @@ def _compact_payload(payload: dict[str, Any]) -> dict[str, Any]:
     recommended_checks = raw_recommended_checks if isinstance(raw_recommended_checks, list) else []
 
     return {
-        "decision": str(payload.get("decision") or "UNKNOWN"),
+        "decision": str(payload["decision"]),
         "summary": _truncate_utf8(str(payload.get("summary") or ""), SUMMARY_LIMIT_BYTES),
-        "blocking_issues": [_compact_issue(issue) for issue in blocking_issues[:BLOCKING_ISSUE_LIMIT]],
+        "blocking_issues": [_compact_issue(issue) for issue in blocking_issues],
         "recommended_checks": [
             _truncate_utf8(str(check or ""), RECOMMENDED_CHECK_LIMIT_BYTES)
             for check in recommended_checks[:RECOMMENDED_CHECK_LIMIT]

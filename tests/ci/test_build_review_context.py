@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from scripts.ci import build_review_context
 
 
@@ -50,13 +52,11 @@ def test_build_review_context_hides_json_payload_from_visible_body(monkeypatch, 
     }
 
 
-def test_build_review_context_uses_unknown_when_decision_missing(monkeypatch, tmp_path: Path, write_json) -> None:
+def test_build_review_context_raises_when_decision_missing(monkeypatch, tmp_path: Path, write_json) -> None:
     review_file = write_json("review.json", {"summary": "missing decision"})
     output = tmp_path / "review_context_comment.md"
-    _run_main(monkeypatch, ["--result-file", str(review_file), "--output", str(output)])
-
-    lines = _read_output_lines(output)
-    assert lines[1] == "Review context metadata (decision: UNKNOWN)."
+    with pytest.raises((KeyError, SystemExit)):
+        _run_main(monkeypatch, ["--result-file", str(review_file), "--output", str(output)])
 
 
 def test_compact_fields_only(monkeypatch, tmp_path: Path, write_json) -> None:
@@ -106,7 +106,7 @@ def test_summary_truncated(monkeypatch, tmp_path: Path, write_json) -> None:
     assert _load_hidden_payload(output)["summary"] == ("a" * 400) + "..."
 
 
-def test_blocking_issues_capped_at_5(monkeypatch, tmp_path: Path, write_json) -> None:
+def test_blocking_issues_all_preserved(monkeypatch, tmp_path: Path, write_json) -> None:
     payload = {
         "decision": "CHANGES_REQUESTED",
         "blocking_issues": [
@@ -125,8 +125,8 @@ def test_blocking_issues_capped_at_5(monkeypatch, tmp_path: Path, write_json) ->
     _run_main(monkeypatch, ["--result-file", str(review_file), "--output", str(output)])
 
     hidden_payload = _load_hidden_payload(output)
-    assert len(hidden_payload["blocking_issues"]) == 5
-    assert hidden_payload["blocking_issues"][-1]["title"] == "Issue 4"
+    assert len(hidden_payload["blocking_issues"]) == 6
+    assert hidden_payload["blocking_issues"][-1]["title"] == "Issue 5"
 
 
 def test_recommended_checks_capped_at_3(monkeypatch, tmp_path: Path, write_json) -> None:

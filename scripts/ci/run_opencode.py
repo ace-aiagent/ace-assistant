@@ -138,6 +138,9 @@ def _extract_text_from_jsonl(raw_stdout: str) -> str:
     """从 ``opencode run --format json`` 的 JSONL 事件流中提取 text 事件内容。
 
     text 事件格式: ``{"type":"text", "part":{"text":"<content>"}}``
+
+    在 opencode JSONL 格式中，``type=text`` 事件全部来自 assistant（无 role 字段）。
+    tool_use、tool_result 等事件使用不同的 type 值，不会被此函数采集。
     """
     parts: list[str] = []
     for line in raw_stdout.splitlines():
@@ -188,7 +191,11 @@ def _get_max_attempts() -> int:
 
 
 def _protocol_mode() -> str:
-    return os.environ.get("ACE_RESULT_PROTOCOL_MODE", "legacy").strip().lower()
+    mode = os.environ.get("ACE_RESULT_PROTOCOL_MODE", "legacy").strip().lower()
+    valid = {"legacy", "dual-read", "strict-envelope"}
+    if mode not in valid:
+        raise ValueError(f"Unknown ACE_RESULT_PROTOCOL_MODE: {mode!r}. Valid: {sorted(valid)}")
+    return mode
 
 
 def _parse_requested_mode(prompt: str, output_file: str) -> str:
@@ -337,6 +344,12 @@ def _parse_result_with_meta(
                 retriable=True,
             )
         validate_envelope(parsed_envelope, requested_mode=requested_mode)
+        if parsed_envelope.get("status") == "error":
+            raise ResultParseError(
+                "STATUS_ERROR",
+                "Envelope status=error: AI reported a processing error.",
+                retriable=False,
+            )
         payload = unwrap_result(parsed_envelope)
         return ParseResult(
             payload=payload,
@@ -409,14 +422,24 @@ def main() -> None:
         legacy_fallback_reason: str | None,
         error_code: str | None,
     ) -> None:
+        context_trimmed = False
+        trim_report = None
+        trim_meta_path = Path(str(args.prompt_file) + ".trim_meta.json")
+        if trim_meta_path.exists():
+            try:
+                tm = json.loads(trim_meta_path.read_text(encoding="utf-8"))
+                context_trimmed = bool(tm.get("context_trimmed", False))
+                trim_report = tm.get("trim_report")
+            except Exception:
+                pass
         diagnostics = normalize_diagnostics(
             {"mode": requested_mode},
             parser_mode=parser_mode,
             fallback_used=fallback_used,
             attempt=attempt,
             max_attempts=max_attempts,
-            context_trimmed=False,
-            trim_report=None,
+            context_trimmed=context_trimmed,
+            trim_report=trim_report,
             legacy_fallback_reason=legacy_fallback_reason,
             raw_log_path=str(raw_log_path),
             error_code=error_code,

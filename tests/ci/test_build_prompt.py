@@ -727,3 +727,45 @@ def test_all_modes_legacy_still_emit_marker_preamble(
     ):
         assert "AI_RESULT_BEGIN" in text
         assert "AI_RESULT_END" in text
+
+
+def test_protocol_mode_raises_for_unknown_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "banana")
+    with pytest.raises(ValueError, match="Unknown ACE_RESULT_PROTOCOL_MODE"):
+        build_prompt._protocol_mode()
+
+
+def test_build_prompt_writes_trim_meta_sidecar(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    write_json,
+    set_ci_env,
+) -> None:
+    import json
+
+    issue_file = write_json("issue.json", {"title": "Bug title", "body": "Bug body"})
+    fields_file = write_json("fields.json", {"base_branch": "main"})
+    output = tmp_path / "triage_prompt.md"
+
+    set_ci_env(ISSUE_NUMBER="12", BASE_BRANCH="main", REPO_NAME="org/repo")
+    _run_main(
+        monkeypatch,
+        [
+            "--mode",
+            "triage",
+            "--issue-file",
+            str(issue_file),
+            "--fields-file",
+            str(fields_file),
+            "--output",
+            str(output),
+        ],
+    )
+
+    trim_meta_path = Path(str(output) + ".trim_meta.json")
+    assert trim_meta_path.exists(), ".trim_meta.json sidecar must be written next to output"
+    trim_meta = json.loads(trim_meta_path.read_text(encoding="utf-8"))
+    assert "context_trimmed" in trim_meta
+    assert "trim_report" in trim_meta
+    assert isinstance(trim_meta["context_trimmed"], bool)
+    assert isinstance(trim_meta["trim_report"], dict)

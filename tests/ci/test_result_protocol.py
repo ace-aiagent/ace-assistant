@@ -151,3 +151,41 @@ def test_validate_envelope_rejects_invalid_mode_value() -> None:
 def test_protocol_validation_error_exposes_error_code_attribute() -> None:
     err = result_protocol.ProtocolValidationError("INVALID_STATUS", "status invalid")
     assert err.error_code == "INVALID_STATUS"
+
+
+def test_validate_envelope_rejects_triage_result_missing_verdict() -> None:
+    envelope = _load_fixture("triage_envelope_ok.json")
+    envelope["result"] = {"reason": "missing verdict field"}
+
+    with pytest.raises(result_protocol.ProtocolValidationError) as exc_info:
+        result_protocol.validate_envelope(envelope, requested_mode="triage")
+
+    assert exc_info.value.error_code == "INVALID_RESULT_SCHEMA"
+
+
+def test_validate_envelope_rejects_review_result_missing_decision() -> None:
+    envelope = _load_fixture("review_envelope_ok.json")
+    envelope["result"] = {"summary": "no decision"}
+
+    with pytest.raises(result_protocol.ProtocolValidationError) as exc_info:
+        result_protocol.validate_envelope(envelope, requested_mode="review")
+
+    assert exc_info.value.error_code == "INVALID_RESULT_SCHEMA"
+
+
+def test_validate_envelope_rejects_fix_result_missing_summary() -> None:
+    envelope = _load_fixture("fix_issue_envelope_ok.json")
+    envelope["result"] = {"changed_files": []}
+
+    with pytest.raises(result_protocol.ProtocolValidationError) as exc_info:
+        result_protocol.validate_envelope(envelope, requested_mode="fix")
+
+    assert exc_info.value.error_code == "INVALID_RESULT_SCHEMA"
+
+
+def test_validate_envelope_skips_result_schema_for_status_error() -> None:
+    envelope = _load_fixture("triage_envelope_ok.json")
+    envelope["status"] = "error"
+    envelope["result"] = {}
+
+    result_protocol.validate_envelope(envelope, requested_mode="triage")

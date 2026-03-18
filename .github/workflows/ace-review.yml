@@ -215,6 +215,7 @@ jobs:
           REPO_NAME: ${{ github.repository }}
           PR_NUMBER: ${{ inputs.pr_number }}
           EXTRA_PROMPT: ${{ inputs.extra_prompt }}
+          ACE_RESULT_PROTOCOL_MODE: ${{ inputs.ace_protocol_mode || vars.ACE_RESULT_PROTOCOL_MODE || 'legacy' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -381,6 +382,7 @@ jobs:
         if: always()
         env:
           PR_NUMBER: ${{ inputs.pr_number }}
+          ACE_PROTOCOL_MODE: ${{ inputs.ace_protocol_mode || vars.ACE_RESULT_PROTOCOL_MODE || 'legacy' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -392,7 +394,7 @@ jobs:
 
           if [[ "$should_exit" != "true" && "$decision" == "CHANGES_REQUESTED" && "$auto_loop" == "true" && "$can_retry" == "true" && "$can_proceed" == "true" ]]; then
             echo "needs_fix=true" >> "$GITHUB_OUTPUT"
-            echo "fix_params={\"target_type\":\"pr\",\"target_number\":\"$PR_NUMBER\",\"auto_loop\":\"true\",\"extra_prompt\":\"\"}" >> "$GITHUB_OUTPUT"
+            echo "fix_params={\"target_type\":\"pr\",\"target_number\":\"$PR_NUMBER\",\"auto_loop\":\"true\",\"extra_prompt\":\"\",\"ace_protocol_mode\":\"$ACE_PROTOCOL_MODE\"}" >> "$GITHUB_OUTPUT"
           else
             echo "needs_fix=false" >> "$GITHUB_OUTPUT"
             echo "fix_params={}" >> "$GITHUB_OUTPUT"
@@ -406,7 +408,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh workflow run ace-fix.yml --ref "${{ github.event.repository.default_branch }}" -f target_type=pr -f target_number="$PR_NUMBER" -f auto_loop=true -f extra_prompt=""
+          gh workflow run ace-fix.yml --ref "${{ github.event.repository.default_branch }}" -f target_type=pr -f target_number="$PR_NUMBER" -f auto_loop=true -f extra_prompt="" -f ace_protocol_mode="${{ inputs.ace_protocol_mode || vars.ACE_RESULT_PROTOCOL_MODE || 'legacy' }}"
       - name: Manual mode finalize meta only
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop != 'true'
         env:
