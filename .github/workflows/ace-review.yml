@@ -64,12 +64,34 @@ jobs:
           gh api "repos/$REPO/pulls/$PR_NUMBER" > pr.json
           gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate > pr_comments.json
           gh api "repos/$REPO/issues/$PR_NUMBER/labels" > pr_labels_before_guard.json
+      - name: Determine metadata persistence mode
+        id: meta_mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker_regex='^[[:space:]]*<!--[[:space:]]*ace-pr-meta[[:space:]]*-->[[:space:]]*$'
+          has_pr_meta="false"
+          has_managed_label="false"
+
+          if jq -e --arg re "$marker_regex" 'map(.body // "") | any(test($re; "m"))' pr_comments.json > /dev/null; then
+            has_pr_meta="true"
+          fi
+          if jq -e 'map(.name) | index("ai:managed") != null' pr_labels_before_guard.json > /dev/null; then
+            has_managed_label="true"
+          fi
+
+          if [[ "$has_pr_meta" == "true" || "$has_managed_label" == "true" || "${{ inputs.auto_loop }}" == "true" ]]; then
+            echo "persist_meta=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "persist_meta=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Force reset PR meta and labels
         if: inputs.force == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ inputs.pr_number }}
+          PERSIST_META: ${{ steps.meta_mode.outputs.persist_meta }}
         shell: bash
         run: |
           set -euo pipefail
@@ -84,7 +106,8 @@ jobs:
             --set-int failure_count=0 \
             --set-int fix_round=1 \
             --set-json last_error=null \
-            --set-json lock_owner=null
+            --set-json lock_owner=null \
+            --set-json auto_loop="$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )"
 
           python -m scripts.ci.build_pr_meta \
             --mode update \
@@ -94,12 +117,14 @@ jobs:
             --last-reviewed-head-sha "" \
             --output pr_meta_comment.md
 
-          python -m scripts.ci.upsert_comment \
-            --comments-file pr_comments.json \
-            --marker ace-pr-meta \
-            --body-file pr_meta_comment.md \
-            --repo "$REPO" \
-            --issue-number "$PR_NUMBER"
+          if [[ "$PERSIST_META" == "true" ]]; then
+            python -m scripts.ci.upsert_comment \
+              --comments-file pr_comments.json \
+              --marker ace-pr-meta \
+              --body-file pr_meta_comment.md \
+              --repo "$REPO" \
+              --issue-number "$PR_NUMBER"
+          fi
 
           gh pr edit "$PR_NUMBER" --repo "$REPO" \
             --remove-label "ai:reviewing" \
@@ -145,7 +170,7 @@ jobs:
           mv pr_meta_lock.json pr_meta.json
           echo "should_exit=false" >> "$GITHUB_OUTPUT"
       - name: Upsert guard lock meta comment
-        if: steps.guard.outputs.should_exit != 'true'
+        if: steps.guard.outputs.should_exit != 'true' && steps.meta_mode.outputs.persist_meta == 'true'
         uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
           marker: ace-pr-meta
@@ -214,7 +239,7 @@ jobs:
           set -euo pipefail
           python -m scripts.ci.build_review_summary --result-file review_result.json --output review_summary.md
       - name: Upsert review context comment
-        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED'
+        if: steps.guard.outputs.should_exit != 'true' && steps.meta_mode.outputs.persist_meta == 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -238,10 +263,10 @@ jobs:
           gh pr review "$PR_NUMBER" --repo "$REPO" --approve --body-file review_summary.md
           gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "ai:reviewing" --remove-label "ai:changes-requested" --remove-label "ai:loop-exceeded" --add-label "ai:review-approved" || true
            cp pr_meta.json pr_meta_new.json
-          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=approved --set last_reviewed_head_sha="$HEAD_SHA" --set-int failure_count=0 --set-json last_error=null --set-json lock_owner=null --set-json auto_loop="$(jq '.auto_loop // true' pr_meta.json)"
+          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=approved --set last_reviewed_head_sha="$HEAD_SHA" --set-int failure_count=0 --set-json last_error=null --set-json lock_owner=null --set-json auto_loop="$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )"
           python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
       - name: Upsert approval meta comment
-        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'APPROVED'
+        if: steps.guard.outputs.should_exit != 'true' && steps.meta_mode.outputs.persist_meta == 'true' && steps.review_outcome.outputs.decision == 'APPROVED'
         uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
           marker: ace-pr-meta
@@ -287,10 +312,10 @@ jobs:
           gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "ai:loop-exceeded" || true
           gh issue comment "$PR_NUMBER" --repo "$REPO" --body "Maximum fix rounds ($MAX_ROUNDS) reached. Please review manually."
            cp pr_meta.json pr_meta_new.json
-          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=loop-exceeded --set last_reviewed_head_sha="$HEAD_SHA" --set-json lock_owner=null --set-json auto_loop="$(jq '.auto_loop // true' pr_meta.json)"
+          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=loop-exceeded --set last_reviewed_head_sha="$HEAD_SHA" --set-json lock_owner=null --set-json auto_loop="$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )"
           python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
       - name: Upsert loop exceeded meta comment
-        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry != 'true'
+        if: steps.guard.outputs.should_exit != 'true' && steps.meta_mode.outputs.persist_meta == 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry != 'true'
         uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
           marker: ace-pr-meta
@@ -323,10 +348,10 @@ jobs:
         run: |
           set -euo pipefail
            cp pr_meta.json pr_meta_new.json
-          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=fix_requested --set last_reviewed_head_sha="$HEAD_SHA" --set-int fix_round="$NEXT_ROUND" --set-json lock_owner=null --set-json auto_loop="$(jq '.auto_loop // true' pr_meta.json)"
+          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=fix_requested --set last_reviewed_head_sha="$HEAD_SHA" --set-int fix_round="$NEXT_ROUND" --set-json lock_owner=null --set-json auto_loop="$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )"
           python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
       - name: Upsert fix-requested meta comment
-        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
+        if: steps.guard.outputs.should_exit != 'true' && steps.meta_mode.outputs.persist_meta == 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
         uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
           marker: ace-pr-meta
@@ -377,10 +402,10 @@ jobs:
         run: |
           set -euo pipefail
            cp pr_meta.json pr_meta_new.json
-          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=changes-requested --set last_reviewed_head_sha="$HEAD_SHA" --set-json lock_owner=null --set-json auto_loop="$(jq '.auto_loop // true' pr_meta.json)"
+          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=changes-requested --set last_reviewed_head_sha="$HEAD_SHA" --set-json lock_owner=null --set-json auto_loop="$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )"
           python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
       - name: Upsert manual mode meta comment
-        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop != 'true'
+        if: steps.guard.outputs.should_exit != 'true' && steps.meta_mode.outputs.persist_meta == 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop != 'true'
         uses: ./.ace-assistant/.github/actions/upsert-marker-comment
         with:
           marker: ace-pr-meta
@@ -390,7 +415,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Failure or cancellation rollback to entry state
-        if: always() && steps.guard.outputs.should_exit != 'true' && (failure() || cancelled())
+        if: always() && steps.guard.outputs.should_exit != 'true' && steps.meta_mode.outputs.persist_meta == 'true' && (failure() || cancelled())
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}

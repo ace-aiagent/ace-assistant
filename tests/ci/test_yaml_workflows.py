@@ -213,6 +213,56 @@ class TestYamlWorkflowValidation:
                 )
 
 
+class TestAceReviewWorkflowMetadataPersistence:
+    def test_review_workflow_has_metadata_persistence_gate(self) -> None:
+        workflow_file = get_project_root() / ".github" / "workflows" / "ace-review.yml"
+        content = workflow_file.read_text(encoding="utf-8")
+
+        assert "- name: Determine metadata persistence mode" in content
+        assert "id: meta_mode" in content
+        assert 'echo "persist_meta=true" >> "$GITHUB_OUTPUT"' in content
+        assert 'echo "persist_meta=false" >> "$GITHUB_OUTPUT"' in content
+
+    def test_review_workflow_meta_comments_are_guarded_by_persistence_mode(self) -> None:
+        workflow_file = get_project_root() / ".github" / "workflows" / "ace-review.yml"
+        content = workflow_file.read_text(encoding="utf-8")
+
+        assert "steps.meta_mode.outputs.persist_meta == 'true'" in content
+        assert "- name: Upsert guard lock meta comment" in content
+        assert "- name: Upsert review context comment" in content
+        assert "- name: Upsert approval meta comment" in content
+        assert "- name: Upsert loop exceeded meta comment" in content
+        assert "- name: Upsert fix-requested meta comment" in content
+        assert "- name: Upsert manual mode meta comment" in content
+
+    def test_force_reset_upsert_is_guarded_by_persistence_mode(self) -> None:
+        workflow_file = get_project_root() / ".github" / "workflows" / "ace-review.yml"
+        content = workflow_file.read_text(encoding="utf-8")
+
+        assert 'PERSIST_META: ${{ steps.meta_mode.outputs.persist_meta }}' in content
+        assert 'if [[ "$PERSIST_META" == "true" ]]; then' in content
+
+    def test_review_workflow_uses_current_input_auto_loop_for_meta_updates(self) -> None:
+        workflow_file = get_project_root() / ".github" / "workflows" / "ace-review.yml"
+        content = workflow_file.read_text(encoding="utf-8")
+
+        expected = '$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )'
+        assert expected in content
+        assert "jq '.auto_loop // true' pr_meta.json" not in content
+
+    def test_review_workflow_rollback_meta_upsert_is_guarded_by_persistence_mode(self) -> None:
+        workflow_file = get_project_root() / ".github" / "workflows" / "ace-review.yml"
+        content = workflow_file.read_text(encoding="utf-8")
+
+        assert "steps.meta_mode.outputs.persist_meta == 'true' && (failure() || cancelled())" in content
+
+    def test_review_workflow_has_single_fix_dispatch_path(self) -> None:
+        workflow_file = get_project_root() / ".github" / "workflows" / "ace-review.yml"
+        content = workflow_file.read_text(encoding="utf-8")
+
+        assert content.count("- name: Dispatch ace-fix workflow") == 1
+
+
 
 
 
