@@ -46,7 +46,7 @@ on:
         value: ${{ jobs.resolve-route.outputs.route_to }}
       route_params:
         description: 'JSON string with routing parameters for the target workflow'
-        value: ${{ jobs.resolve-route.outputs.route_params }}
+        value: ${{ toJSON(jobs.resolve-route.outputs.route_params) }}
 jobs:
   ensure-labels:
     runs-on: ubuntu-latest
@@ -511,4 +511,5 @@ jobs:
           fi
 
           echo "route_to=$route_to" >> "$GITHUB_OUTPUT"
-          echo "route_params=$route_params" >> "$GITHUB_OUTPUT"
+          # Ensure route_params is valid JSON by echoing it directly
+          printf 'route_params=%s\n' "$route_params" >> "$GITHUB_OUTPUT"
