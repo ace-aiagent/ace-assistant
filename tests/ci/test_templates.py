@@ -75,17 +75,22 @@ class TestCallerDispatchTemplateRouteParamsSafety:
         assert "fromJSON(needs.dispatch.outputs.route_params)" not in content
 
 
-class TestCallerReviewTemplateFixParamsSafety:
-    def test_trigger_fix_parses_fix_params_without_shell_single_quote_embedding(self) -> None:
+class TestCallerReviewTemplateDefaults:
+    def test_workflow_dispatch_review_defaults_to_manual_loop_mode(self) -> None:
+        template_path = get_project_root() / "templates" / "caller-review.yml"
+        data = yaml.safe_load(template_path.read_text(encoding="utf-8"))
+
+        workflow_dispatch = data[True]["workflow_dispatch"]
+        review_inputs = workflow_dispatch["inputs"]
+
+        assert review_inputs["auto_loop"]["default"] == "false"
+
+    def test_caller_review_template_has_single_review_job(self) -> None:
         template_path = get_project_root() / "templates" / "caller-review.yml"
         content = template_path.read_text(encoding="utf-8")
 
-        assert "FIX_PARAMS: ${{ needs.review.outputs.fix_params }}" in content
-        assert "RAW_FIX_PARAMS=" in content
-        assert "SAFE_FIX_PARAMS=" in content
-        assert "PARSE_OK=false" in content
-        assert "DOUBLE_INNER=" in content
-        assert "fromJSON(needs.review.outputs.fix_params)" not in content
+        assert "trigger-fix:" not in content
+        assert "needs.review.outputs.needs_fix" not in content
 
 
 class TestAceConfigExampleJson:
