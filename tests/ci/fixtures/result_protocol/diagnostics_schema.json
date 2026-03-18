@@ -1,0 +1,13 @@
+{
+  "protocol_version": "result-envelope.v1",
+  "requested_mode": "triage | fix | review",
+  "parser_mode": "envelope | legacy | unknown",
+  "fallback_used": false,
+  "attempt": 1,
+  "max_attempts": 2,
+  "context_trimmed": false,
+  "trim_report": null,
+  "legacy_fallback_reason": null,
+  "raw_log_path": "path/to/fix_result.raw.txt",
+  "error_code": null
+}

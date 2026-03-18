@@ -14,3 +14,6 @@ scripts/create_fragment.data.json
 
 .sisyphus
 *.pyc
+
+*.trim_meta.json
+*.diagnostics.json

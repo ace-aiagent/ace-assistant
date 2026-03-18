@@ -1,0 +1,26 @@
+{
+  "decision": "CHANGES_REQUESTED",
+  "summary": "核心逻辑可行，但有一个阻塞问题需修复",
+  "blocking_issues": [
+    {
+      "title": "空头像兜底分支未覆盖",
+      "severity": "high",
+      "why": "线上空头像用户仍可能触发渲染异常",
+      "suggested_fix": "在头像URL为空时统一走默认资源"
+    }
+  ],
+  "non_blocking_suggestions": [
+    {
+      "file": "src/ui/profile_card.ts",
+      "description": "建议提取头像URL归一化函数提升可读性",
+      "severity": "low",
+      "lines": [
+        34,
+        51
+      ]
+    }
+  ],
+  "recommended_checks": [
+    "PYTHONPATH=. python -m pytest tests/ui/test_profile_card.py -q"
+  ]
+}
