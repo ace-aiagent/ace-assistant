@@ -26,6 +26,8 @@ on:
         required: true
       GH_PAT:
         required: true
+      BAILIAN_API_KEY:
+        required: true
     outputs:
       needs_fix:
         description: Whether a fix dispatch is needed (true/false)
@@ -38,6 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PYTHONPATH: ${{ github.workspace }}/.ace-assistant
+      BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
     outputs:
       needs_fix: ${{ steps.set_outputs.outputs.needs_fix }}
       fix_params: ${{ steps.set_outputs.outputs.fix_params }}

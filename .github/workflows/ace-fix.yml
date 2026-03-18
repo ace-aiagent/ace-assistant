@@ -35,11 +35,14 @@ on:
         required: true
       GH_PAT:
         required: true
+      BAILIAN_API_KEY:
+        required: true
 jobs:
   fix:
     runs-on: ubuntu-latest
     env:
       PYTHONPATH: ${{ github.workspace }}/.ace-assistant
+      BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
     steps:
       - name: Bootstrap AI worker
         uses: ace-aiagent/ace-assistant/.github/actions/ace-worker-bootstrap@v1

@@ -40,6 +40,8 @@ on:
         required: true
       GH_PAT:
         required: true
+      BAILIAN_API_KEY:
+        required: true
     outputs:
       route_to:
         description: 'Routing target: fix, review, or none'
@@ -70,6 +72,7 @@ jobs:
       route_params: ${{ toJSON(steps.set_route.outputs.route_params) }}
     env:
       PYTHONPATH: ${{ github.workspace }}/.ace-assistant
+      BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
     steps:
       - name: Bootstrap AI worker
         uses: ace-aiagent/ace-assistant/.github/actions/ace-worker-bootstrap@v1
