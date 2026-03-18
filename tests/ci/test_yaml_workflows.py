@@ -441,6 +441,47 @@ class TestProtocolRolloutControls:
         )
 
 
+class TestRoundHistoryPersistence:
+    def test_ace_review_records_review_history_for_all_outcomes(self) -> None:
+        content = (
+            get_project_root() / ".github" / "workflows" / "ace-review.yml"
+        ).read_text(encoding="utf-8")
+
+        assert content.count("--set-json review_history=") >= 4
+        assert "--set status=approved" in content
+        assert "--set status=loop-exceeded" in content
+        assert "--set status=fix_requested" in content
+        assert "--set status=changes-requested" in content
+
+    def test_ace_review_history_entry_structure_is_complete(self) -> None:
+        content = (
+            get_project_root() / ".github" / "workflows" / "ace-review.yml"
+        ).read_text(encoding="utf-8")
+
+        assert "review_summary_text=\"$(jq -r '.summary' review_result.json)\"" in content
+        assert "blocking_count=\"$(jq -r '.blocking_issues | length' review_result.json)\"" in content
+        assert "decision: $decision" in content
+        assert "blocking_count: $issues" in content
+        assert "timestamp: now | todate" in content
+
+    def test_ace_review_history_keeps_latest_three_rounds(self) -> None:
+        content = (
+            get_project_root() / ".github" / "workflows" / "ace-review.yml"
+        ).read_text(encoding="utf-8")
+
+        assert "'$history + [$entry] | .[-3:]'" in content
+
+    def test_ace_fix_records_fix_history_and_trims_fields(self) -> None:
+        content = (
+            get_project_root() / ".github" / "workflows" / "ace-fix.yml"
+        ).read_text(encoding="utf-8")
+
+        assert "--set-json fix_history=" in content
+        assert "--arg summary \"${fix_summary_text:0:200}\"" in content
+        assert "changed_files=\"$(jq -r '.changed_files // [] | join(\", \")' fix_result.json | head -c 100)\"" in content
+        assert "'$history + [$entry] | .[-3:]'" in content
+
+
 
 
 
