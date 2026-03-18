@@ -1,0 +1,40 @@
+{
+    "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/master/assets/oh-my-openagent.schema.json",
+    "agents": {
+        "sisyphus": {
+            "model": "bailian-coding-plan/kimi-k2.5"
+        },
+        "librarian": {
+            "model": "bailian-coding-plan/MiniMax-M2.5"
+        },
+        "multimodal-looker": {
+            "model": "github-copilot/gpt-5.4",
+            "variant": "medium"
+        },
+        "prometheus": {
+            "model": "github-copilot/gpt-5.4",
+            "variant": "high"
+        },
+        "metis": {
+            "model": "github-copilot/gpt-5.4",
+            "variant": "high"
+        },
+        "atlas": {
+            "model": "github-copilot/claude-sonnet-4.6"
+        }
+    },
+    "categories": {
+        "ultrabrain": {
+            "model": "github-copilot/gpt-5.4",
+            "variant": "xhigh"
+        },
+        "deep": {
+            "model": "github-copilot/gpt-5.3-codex",
+            "variant": "medium"
+        },
+        "unspecified-high": {
+            "model": "github-copilot/gpt-5.4",
+            "variant": "high"
+        }
+    }
+}
