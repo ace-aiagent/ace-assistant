@@ -30,6 +30,11 @@ on:
         required: false
         type: string
         default: "false"
+      ace_protocol_mode:
+        description: "Protocol mode override (legacy | dual-read | strict-envelope)"
+        type: string
+        required: false
+        default: ""
     secrets:
       OPENCODE_AUTH_JSON_B64:
         required: true
@@ -102,9 +107,20 @@ jobs:
           set -euo pipefail; python -m scripts.ci.build_prompt             --mode triage             --issue-file issue.json             --fields-file issue_fields.json             --output triage_prompt.md
       - name: Run triage agent
         if: inputs.target_type == 'issue' && steps.validate_issue_branch.outputs.valid == 'true' && inputs.triage_json == ''
+        env:
+          ACE_RESULT_PROTOCOL_MODE: ${{ inputs.ace_protocol_mode || vars.ACE_RESULT_PROTOCOL_MODE || 'legacy' }}
         shell: bash
         run: |
           set -euo pipefail; python -m scripts.ci.run_opencode             --prompt-file triage_prompt.md             --output-file triage_result.json
+      - name: Show protocol diagnostics on failure
+        if: failure() && inputs.target_type == 'issue' && steps.validate_issue_branch.outputs.valid == 'true' && inputs.triage_json == ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIAG="triage_result.json.diagnostics.json"
+          if [ -f "$DIAG" ]; then
+            echo "Protocol error_code: $(jq -r '.error_code // "unknown"' "$DIAG")"
+          fi
       - name: Prepare triage outputs
         if: inputs.target_type == 'issue' && steps.validate_issue_branch.outputs.valid == 'true'
         id: triage_out
@@ -165,9 +181,20 @@ jobs:
           set -euo pipefail; python -m scripts.ci.build_prompt             --mode fix             --issue-file issue.json             --fields-file issue_fields.json             --triage-file triage_result.json             --output fix_prompt.md
       - name: Run issue fix agent
         if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG'
+        env:
+          ACE_RESULT_PROTOCOL_MODE: ${{ inputs.ace_protocol_mode || vars.ACE_RESULT_PROTOCOL_MODE || 'legacy' }}
         shell: bash
         run: |
           set -euo pipefail; python -m scripts.ci.run_opencode             --prompt-file fix_prompt.md             --output-file fix_result.json
+      - name: Show protocol diagnostics on failure
+        if: failure() && inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG'
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIAG="fix_result.json.diagnostics.json"
+          if [ -f "$DIAG" ]; then
+            echo "Protocol error_code: $(jq -r '.error_code // "unknown"' "$DIAG")"
+          fi
       - name: Check whether issue fix changed code
         if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG'
         id: issue_diff_check
@@ -404,9 +431,20 @@ jobs:
           set -euo pipefail; python -m scripts.ci.build_prompt             --mode fix             --pr-file pr.json             --pr-meta-file pr_meta.json             --review-context-file review_context.json             --output fix_prompt.md
       - name: Run PR fix agent
         if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
+        env:
+          ACE_RESULT_PROTOCOL_MODE: ${{ inputs.ace_protocol_mode || vars.ACE_RESULT_PROTOCOL_MODE || 'legacy' }}
         shell: bash
         run: |
           set -euo pipefail; python -m scripts.ci.run_opencode             --prompt-file fix_prompt.md             --output-file fix_result.json
+      - name: Show protocol diagnostics on failure
+        if: failure() && inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIAG="fix_result.json.diagnostics.json"
+          if [ -f "$DIAG" ]; then
+            echo "Protocol error_code: $(jq -r '.error_code // "unknown"' "$DIAG")"
+          fi
       - name: Check whether PR fix changed code
         if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
         id: pr_diff_check

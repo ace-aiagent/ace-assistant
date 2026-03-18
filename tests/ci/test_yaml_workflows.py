@@ -7,6 +7,12 @@ import pytest
 import yaml
 
 
+PROTOCOL_MODE_EXPRESSION = (
+    "${{ inputs.ace_protocol_mode || vars.ACE_RESULT_PROTOCOL_MODE || 'legacy' }}"
+)
+PROTOCOL_DIAGNOSTICS_STEP_NAME = "Show protocol diagnostics on failure"
+
+
 def get_project_root() -> Path:
     """Get the repository root directory."""
     return Path(__file__).resolve().parents[2]
@@ -37,6 +43,68 @@ def get_scripts_ci_python_files() -> list[Path]:
     root = get_project_root()
     scripts_dir = root / "scripts" / "ci"
     return sorted(scripts_dir.glob("*.py"))
+
+
+def load_workflow_yaml(workflow_name: str) -> dict:
+    workflow_file = get_project_root() / ".github" / "workflows" / workflow_name
+    with open(workflow_file, encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def get_job_steps(workflow_name: str, job_name: str) -> list[dict]:
+    workflow = load_workflow_yaml(workflow_name)
+    steps = workflow["jobs"][job_name]["steps"]
+    assert isinstance(steps, list)
+    return [step for step in steps if isinstance(step, dict)]
+
+
+def get_run_opencode_step_indexes(steps: list[dict]) -> list[int]:
+    indexes: list[int] = []
+    for index, step in enumerate(steps):
+        run_script = step.get("run")
+        if isinstance(run_script, str) and "scripts.ci.run_opencode" in run_script:
+            indexes.append(index)
+    return indexes
+
+
+def extract_output_file(run_script: str) -> str:
+    match = re.search(r"--output-file\s+([^\s]+)", run_script)
+    assert match is not None, f"Missing --output-file in run script: {run_script}"
+    return match.group(1)
+
+
+def assert_run_opencode_steps_have_protocol_mode_env(steps: list[dict]) -> None:
+    run_opencode_indexes = get_run_opencode_step_indexes(steps)
+    assert run_opencode_indexes, "Expected at least one run_opencode step"
+
+    for index in run_opencode_indexes:
+        step = steps[index]
+        env = step.get("env")
+        assert isinstance(env, dict), f"Step is missing env: {step.get('name')}"
+        assert env.get("ACE_RESULT_PROTOCOL_MODE") == PROTOCOL_MODE_EXPRESSION
+
+
+def assert_protocol_diagnostics_follow_run_opencode_steps(steps: list[dict]) -> None:
+    run_opencode_indexes = get_run_opencode_step_indexes(steps)
+    assert run_opencode_indexes, "Expected at least one run_opencode step"
+
+    for index in run_opencode_indexes:
+        step = steps[index]
+        assert index + 1 < len(steps), f"Missing diagnostics step after {step.get('name')}"
+
+        diagnostics_step = steps[index + 1]
+        assert diagnostics_step.get("name") == PROTOCOL_DIAGNOSTICS_STEP_NAME
+        assert diagnostics_step.get("if") == f"failure() && {step['if']}"
+        assert diagnostics_step.get("shell") == "bash"
+
+        diagnostics_run = diagnostics_step.get("run")
+        assert isinstance(diagnostics_run, str)
+        output_file = extract_output_file(step["run"])
+        assert f'DIAG="{output_file}.diagnostics.json"' in diagnostics_run
+        assert "if [ -f \"$DIAG\" ]; then" in diagnostics_run
+        assert "Protocol error_code:" in diagnostics_run
+        assert 'jq -r \' .error_code // "unknown" \' ' not in diagnostics_run
+        assert "jq -r '.error_code // \"unknown\"' \"$DIAG\"" in diagnostics_run
 
 
 class TestYamlWorkflowValidation:
@@ -261,6 +329,44 @@ class TestAceReviewWorkflowMetadataPersistence:
         content = workflow_file.read_text(encoding="utf-8")
 
         assert content.count("- name: Dispatch ace-fix workflow") == 1
+
+
+class TestProtocolRolloutControls:
+    def test_ace_fix_run_opencode_steps_have_protocol_mode_env(self) -> None:
+        steps = get_job_steps("ace-fix.yml", "fix")
+
+        assert len(get_run_opencode_step_indexes(steps)) == 3
+        assert_run_opencode_steps_have_protocol_mode_env(steps)
+
+    def test_ace_review_run_opencode_step_has_protocol_mode_env(self) -> None:
+        steps = get_job_steps("ace-review.yml", "review")
+
+        assert len(get_run_opencode_step_indexes(steps)) == 1
+        assert_run_opencode_steps_have_protocol_mode_env(steps)
+
+    def test_ace_fix_has_protocol_diagnostics_steps(self) -> None:
+        steps = get_job_steps("ace-fix.yml", "fix")
+
+        assert steps.count({"name": PROTOCOL_DIAGNOSTICS_STEP_NAME}) == 0
+        assert_protocol_diagnostics_follow_run_opencode_steps(steps)
+
+    def test_ace_review_has_protocol_diagnostics_step(self) -> None:
+        steps = get_job_steps("ace-review.yml", "review")
+
+        assert_protocol_diagnostics_follow_run_opencode_steps(steps)
+
+    def test_workflows_expose_protocol_mode_input(self) -> None:
+        for workflow_name in ("ace-fix.yml", "ace-review.yml"):
+            workflow = load_workflow_yaml(workflow_name)
+            inputs = workflow[True]["workflow_call"]["inputs"]
+
+            assert "ace_protocol_mode" in inputs
+            assert inputs["ace_protocol_mode"] == {
+                "description": "Protocol mode override (legacy | dual-read | strict-envelope)",
+                "type": "string",
+                "required": False,
+                "default": "",
+            }
 
 
 

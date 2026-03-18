@@ -21,6 +21,11 @@ on:
         required: false
         type: string
         default: "false"
+      ace_protocol_mode:
+        description: "Protocol mode override (legacy | dual-read | strict-envelope)"
+        type: string
+        required: false
+        default: ""
     secrets:
       OPENCODE_AUTH_JSON_B64:
         required: true
@@ -216,10 +221,21 @@ jobs:
           python -m scripts.ci.build_prompt --mode review --pr-file pr.json --pr-meta-file pr_meta.json --output review_prompt.md
       - name: Run review agent
         if: steps.guard.outputs.should_exit != 'true'
+        env:
+          ACE_RESULT_PROTOCOL_MODE: ${{ inputs.ace_protocol_mode || vars.ACE_RESULT_PROTOCOL_MODE || 'legacy' }}
         shell: bash
         run: |
           set -euo pipefail
           python -m scripts.ci.run_opencode --prompt-file review_prompt.md --output-file review_result.json
+      - name: Show protocol diagnostics on failure
+        if: failure() && steps.guard.outputs.should_exit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIAG="review_result.json.diagnostics.json"
+          if [ -f "$DIAG" ]; then
+            echo "Protocol error_code: $(jq -r '.error_code // "unknown"' "$DIAG")"
+          fi
       - name: Parse review decision
         if: steps.guard.outputs.should_exit != 'true'
         id: review_outcome
