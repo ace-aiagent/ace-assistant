@@ -718,3 +718,196 @@ def test_main_non_zero_return_code_does_not_retry_even_when_configured(
 
     assert exc.value.code == 7
     assert call_count["value"] == 1
+
+
+def _make_envelope(*, mode: str = "triage", result: dict | None = None, protocol_version: str = "result-envelope.v1") -> dict:
+    return {
+        "protocol_version": protocol_version,
+        "mode": mode,
+        "status": "ok",
+        "result": result or {"ok": True},
+        "diagnostics": None,
+    }
+
+
+def test_parse_result_dual_read_uses_last_complete_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "dual-read")
+    envelope1 = json.dumps(_make_envelope(result={"round": 1}))
+    envelope2 = json.dumps(_make_envelope(result={"round": 2}))
+    text = f"intro\n{envelope1}\nmid\n{envelope2}\n"
+
+    result = run_opencode._parse_result(text, is_jsonl=False)
+
+    assert result == {"round": 2}
+
+
+def test_parse_result_dual_read_incomplete_tail_is_retriable_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "dual-read")
+    text = 'before\n{"protocol_version":"result-envelope.v1","mode":"triage"'
+
+    with pytest.raises(run_opencode.ResultParseError) as exc_info:
+        run_opencode._parse_result_with_meta(
+            text,
+            is_jsonl=False,
+            protocol_mode="dual-read",
+            requested_mode="triage",
+        )
+
+    assert exc_info.value.error_code == "INCOMPLETE_ENVELOPE_TAIL"
+    assert run_opencode._is_retriable_parse_error(exc_info.value) is True
+
+
+def test_parse_result_dual_read_falls_back_to_markers_when_no_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "dual-read")
+    text = "AI_RESULT_BEGIN\n{\"ok\": true}\nAI_RESULT_END\n"
+
+    meta = run_opencode._parse_result_with_meta(
+        text,
+        is_jsonl=False,
+        protocol_mode="dual-read",
+        requested_mode="triage",
+    )
+
+    assert meta.payload == {"ok": True}
+    assert meta.parser_mode == "legacy"
+    assert meta.fallback_used is True
+    assert meta.legacy_fallback_reason == "no_envelope_candidates"
+
+
+def test_parse_result_dual_read_invalid_last_envelope_does_not_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "dual-read")
+    valid = json.dumps(_make_envelope(mode="triage", result={"round": 1}))
+    invalid = json.dumps(_make_envelope(mode="fix", result={"round": 2}))
+    text = f"{valid}\n{invalid}\nAI_RESULT_BEGIN\n{{\"ok\":true}}\nAI_RESULT_END\n"
+
+    with pytest.raises(Exception) as exc_info:
+        run_opencode._parse_result_with_meta(
+            text,
+            is_jsonl=False,
+            protocol_mode="dual-read",
+            requested_mode="triage",
+        )
+
+    assert exc_info.type.__name__ == "ProtocolValidationError"
+
+
+def test_parse_result_strict_envelope_missing_candidate_raises_protocol_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "strict-envelope")
+
+    with pytest.raises(Exception) as exc_info:
+        run_opencode._parse_result_with_meta(
+            "AI_RESULT_BEGIN\n{\"ok\": true}\nAI_RESULT_END\n",
+            is_jsonl=False,
+            protocol_mode="strict-envelope",
+            requested_mode="triage",
+        )
+
+    assert exc_info.type.__name__ == "ProtocolValidationError"
+    assert getattr(exc_info.value, "error_code", "") == "MISSING_ENVELOPE"
+
+
+def test_parse_result_envelope_wins_when_markers_and_envelope_both_exist(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "dual-read")
+    envelope = json.dumps(_make_envelope(result={"source": "envelope"}))
+    text = f"AI_RESULT_BEGIN\n{{\"source\":\"marker\"}}\nAI_RESULT_END\n{envelope}\n"
+
+    result = run_opencode._parse_result(text, is_jsonl=False)
+
+    assert result == {"source": "envelope"}
+
+
+def test_main_dual_read_success_writes_diagnostics_sidecar(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    prompt_file = tmp_path / "prompt.md"
+    output_file = tmp_path / "triage_result.json"
+    prompt_file.write_text("prompt", encoding="utf-8")
+    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "dual-read")
+
+    envelope = json.dumps(_make_envelope(mode="triage", result={"verdict": "CONFIRMED_BUG"}))
+    _mock_popen(monkeypatch, stdout_text=f"analysis\n{envelope}\n")
+
+    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
+
+    assert json.loads(output_file.read_text(encoding="utf-8")) == {"verdict": "CONFIRMED_BUG"}
+    diagnostics = json.loads(Path(f"{output_file}.diagnostics.json").read_text(encoding="utf-8"))
+    assert diagnostics["protocol_version"] == "result-envelope.v1"
+    assert diagnostics["requested_mode"] == "triage"
+    assert diagnostics["parser_mode"] == "envelope"
+    assert diagnostics["fallback_used"] is False
+    assert diagnostics["attempt"] == 1
+    assert diagnostics["max_attempts"] == 2
+    assert diagnostics["context_trimmed"] is False
+    assert diagnostics["trim_report"] is None
+    assert diagnostics["legacy_fallback_reason"] is None
+    assert diagnostics["raw_log_path"].endswith("triage_result.raw.txt")
+    assert diagnostics["error_code"] is None
+
+
+def test_main_dual_read_legacy_fallback_sets_fallback_used(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    prompt_file = tmp_path / "prompt.md"
+    output_file = tmp_path / "triage_result.json"
+    prompt_file.write_text("prompt", encoding="utf-8")
+    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "dual-read")
+
+    _mock_popen(monkeypatch, stdout_text="AI_RESULT_BEGIN\n{\"ok\": true}\nAI_RESULT_END\n")
+
+    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
+
+    diagnostics = json.loads(Path(f"{output_file}.diagnostics.json").read_text(encoding="utf-8"))
+    assert diagnostics["parser_mode"] == "legacy"
+    assert diagnostics["fallback_used"] is True
+    assert diagnostics["legacy_fallback_reason"] == "no_envelope_candidates"
+    assert diagnostics["error_code"] is None
+
+
+def test_main_strict_envelope_failure_deletes_stale_output_and_writes_diagnostics(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prompt_file = tmp_path / "prompt.md"
+    output_file = tmp_path / "triage_result.json"
+    prompt_file.write_text("prompt", encoding="utf-8")
+    output_file.write_text('{"stale": true}', encoding="utf-8")
+    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "strict-envelope")
+
+    _mock_popen(monkeypatch, stdout_text="AI_RESULT_BEGIN\n{\"ok\": true}\nAI_RESULT_END\n")
+
+    with pytest.raises(SystemExit):
+        _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
+
+    assert not output_file.exists()
+    assert output_file.with_suffix(".raw.txt").exists()
+    diagnostics = json.loads(Path(f"{output_file}.diagnostics.json").read_text(encoding="utf-8"))
+    assert diagnostics["parser_mode"] == "envelope"
+    assert diagnostics["fallback_used"] is False
+    assert diagnostics["error_code"] == "MISSING_ENVELOPE"
+
+
+def test_main_strict_envelope_incomplete_tail_retries_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prompt_file = tmp_path / "prompt.md"
+    output_file = tmp_path / "triage_result.json"
+    prompt_file.write_text("prompt", encoding="utf-8")
+    monkeypatch.setenv("ACE_RESULT_PROTOCOL_MODE", "strict-envelope")
+    monkeypatch.setenv("OPENCODE_MAX_ATTEMPTS", "2")
+
+    envelope = json.dumps(_make_envelope(mode="triage", result={"ok": True}))
+    outputs = [
+        '{"protocol_version":"result-envelope.v1","mode":"triage"',
+        envelope,
+    ]
+    call_idx = {"value": 0}
+
+    def _factory(*args, **kwargs) -> _FakeProc:
+        idx = call_idx["value"]
+        call_idx["value"] += 1
+        return _FakeProc(stdout=io.StringIO(outputs[idx]), stderr=io.StringIO(""), returncode=0)
+
+    monkeypatch.setattr(subprocess, "Popen", _factory)
+
+    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
+
+    assert call_idx["value"] == 2
+    assert json.loads(output_file.read_text(encoding="utf-8")) == {"ok": True}
+    diagnostics = json.loads(Path(f"{output_file}.diagnostics.json").read_text(encoding="utf-8"))
+    assert diagnostics["attempt"] == 2
+    assert diagnostics["error_code"] is None
