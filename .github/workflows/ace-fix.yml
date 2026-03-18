@@ -36,7 +36,7 @@ on:
       GH_PAT:
         required: true
       BAILIAN_API_KEY:
-        required: true
+        required: false
 jobs:
   fix:
     runs-on: ubuntu-latest

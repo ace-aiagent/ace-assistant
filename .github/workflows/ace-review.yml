@@ -27,7 +27,7 @@ on:
       GH_PAT:
         required: true
       BAILIAN_API_KEY:
-        required: true
+        required: false
     outputs:
       needs_fix:
         description: Whether a fix dispatch is needed (true/false)

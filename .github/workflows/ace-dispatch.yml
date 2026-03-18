@@ -41,7 +41,7 @@ on:
       GH_PAT:
         required: true
       BAILIAN_API_KEY:
-        required: true
+        required: false
     outputs:
       route_to:
         description: 'Routing target: fix, review, or none'
