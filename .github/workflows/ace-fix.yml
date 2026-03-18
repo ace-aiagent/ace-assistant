@@ -494,7 +494,39 @@ jobs:
           PR_NUMBER: ${{ inputs.target_number }}
         shell: bash
         run: |
-          set -euo pipefail; if [[ -f /tmp/pr_meta.json ]]; then meta_file="/tmp/pr_meta.json"; else meta_file="pr_meta.json"; fi; if [[ -f /tmp/pr_comments.json ]]; then comments_file="/tmp/pr_comments.json"; else comments_file="pr_comments.json"; fi; auto_loop_value="$(jq -r '.auto_loop' "$meta_file")"; cp "$meta_file" pr_meta_idle.json; python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_idle.json --set base_branch="${{ steps.checkout_pr_head.outputs.base_ref }}" --set branch="${{ steps.checkout_pr_head.outputs.head_ref }}" --set status=reviewing --set-int failure_count=0 --set-json lock_owner=null --set-json auto_loop="$( [[ "$auto_loop_value" == "true" ]] && echo true || echo false )" --set-json last_error=null; python -m scripts.ci.build_pr_meta             --mode update             --input-file pr_meta_idle.json             --active-operation idle             --requested-head-sha "${{ steps.checkout_pr_head.outputs.head_sha }}"             --auto-loop "$auto_loop_value"             --output pr_meta_comment.md; echo "comments_file=$comments_file" >> "$GITHUB_OUTPUT"
+          set -euo pipefail; if [[ -f /tmp/pr_meta.json ]]; then meta_file="/tmp/pr_meta.json"; else meta_file="pr_meta.json"; fi; if [[ -f /tmp/pr_comments.json ]]; then comments_file="/tmp/pr_comments.json"; else comments_file="pr_comments.json"; fi; auto_loop_value="$(jq -r '.auto_loop' "$meta_file")"; cp "$meta_file" pr_meta_idle.json
+          # Build fix history entry
+          fix_round="$(jq -r '.fix_round // 1' "$meta_file")"
+          fix_summary_text=""
+          if [[ -f fix_result.json ]]; then
+            fix_summary_text="$(jq -r '.summary // ""' fix_result.json)"
+          fi
+          changed_files=""
+          if [[ -f fix_result.json ]]; then
+            changed_files="$(jq -r '.changed_files // [] | join(", ")' fix_result.json | head -c 100)"
+          fi
+          fix_entry="$(jq -n \
+            --arg round "$fix_round" \
+            --arg summary "${fix_summary_text:0:200}" \
+            --arg files "$changed_files" \
+            '{round: ($round | tonumber), summary: $summary, changed_files: $files, timestamp: now | todate}')"
+          python -m scripts.ci.update_pr_meta_json \
+            --meta-file pr_meta_idle.json \
+            --set base_branch="${{ steps.checkout_pr_head.outputs.base_ref }}" \
+            --set branch="${{ steps.checkout_pr_head.outputs.head_ref }}" \
+            --set status=reviewing \
+            --set-int failure_count=0 \
+            --set-json lock_owner=null \
+            --set-json auto_loop="$( [[ "$auto_loop_value" == "true" ]] && echo true || echo false )" \
+            --set-json last_error=null \
+            --set-json fix_history="$(jq -n --argjson entry \"$fix_entry\" --argjson history \"$(jq '.fix_history // []' \"$meta_file\")\" '$history + [$entry] | .[-3:]')"
+          python -m scripts.ci.build_pr_meta \
+            --mode update \
+            --input-file pr_meta_idle.json \
+            --active-operation idle \
+            --requested-head-sha "${{ steps.checkout_pr_head.outputs.head_sha }}" \
+            --auto-loop "$auto_loop_value" \
+            --output pr_meta_comment.md; echo "comments_file=$comments_file" >> "$GITHUB_OUTPUT"
       - name: Upsert AI PR metadata (idle)
         if: inputs.target_type == 'pr' && steps.pr_guard.outputs.can_run == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
         env:
