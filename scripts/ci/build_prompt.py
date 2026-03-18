@@ -52,7 +52,6 @@ _ENVELOPE_OUTPUT_EPILOGUE = f"""CRITICAL: Output ONLY one compact JSON object co
 
 
 def _protocol_mode() -> str:
-    """Return ACE_RESULT_PROTOCOL_MODE; default is 'legacy'. Raises ValueError for unknown values."""
     mode = os.environ.get("ACE_RESULT_PROTOCOL_MODE", "legacy").strip().lower()
     valid = {"legacy", "dual-read", "strict-envelope"}
     if mode not in valid:
@@ -70,6 +69,31 @@ def _output_epilogue(mode: str) -> str:
     if _protocol_mode() in {"dual-read", "strict-envelope"}:
         return _ENVELOPE_OUTPUT_EPILOGUE.replace("<MODE>", mode)
     return _CI_OUTPUT_EPILOGUE
+
+
+def _build_history_section(pr_meta: dict[str, Any]) -> str:
+    review_history = pr_meta.get("review_history", [])
+    fix_history = pr_meta.get("fix_history", [])
+
+    if not review_history and not fix_history:
+        return ""
+
+    lines = ["\n### Previous Rounds Summary"]
+
+    for review in review_history[-3:]:
+        round_num = review.get("round", "?")
+        decision = review.get("decision", "UNKNOWN")
+        summary = review.get("summary", "")[:80]
+        blocking = review.get("blocking_count", 0)
+        lines.append(f"- Review#{round_num}: {decision} - {summary}... ({blocking} blocking issues)")
+
+    for fix in fix_history[-3:]:
+        round_num = fix.get("round", "?")
+        summary = fix.get("summary", "")[:80]
+        files = fix.get("changed_files", "")[:50]
+        lines.append(f"- Fix#{round_num}: {summary}... [files: {files}]")
+
+    return "\n".join(lines) + "\n"
 
 
 def _build_triage_prompt(
@@ -213,7 +237,7 @@ def _build_fix_prompt(
             "followups": ["optional item"]
           }}
 
-          IMPORTANT: Keep the JSON compact. Each "details" value must be a short one-line note (≤80 chars), NOT full command output.
+          IMPORTANT: Keep the JSON compact. Each "details" value must be a short one-line note (<=80 chars), NOT full command output.
 
           {_output_epilogue("fix")}"""
     return prompt, gov
@@ -246,6 +270,7 @@ def _build_fix_loop_prompt(
     base_ref = (pr.get("base") or {}).get("ref", "")
     head_ref = (pr.get("head") or {}).get("ref", "")
     pr_title = pr.get("title", "")
+    history_section = _build_history_section(pr_meta)
 
     extra_section = ""
     if extra_prompt:
@@ -279,7 +304,7 @@ def _build_fix_loop_prompt(
 
           PR body:
           {pr_body}
-
+          {history_section}
           AI PR meta JSON:
           {pr_meta_json}
 
@@ -296,7 +321,7 @@ def _build_fix_loop_prompt(
             "remaining_risks": ["optional item"]
           }}
 
-          IMPORTANT: Keep the JSON compact. Each "details" value must be a short one-line note (≤80 chars), NOT full command output.
+          IMPORTANT: Keep the JSON compact. Each "details" value must be a short one-line note (<=80 chars), NOT full command output.
 
           {_output_epilogue("fix")}"""
     return prompt, gov
@@ -322,6 +347,7 @@ def _build_review_prompt(
     base_ref = (pr.get("base") or {}).get("ref", "")
     head_ref = (pr.get("head") or {}).get("ref", "")
     pr_title = pr.get("title", "")
+    history_section = _build_history_section(pr_meta)
 
     extra_section = ""
     if extra_prompt:
@@ -353,7 +379,7 @@ def _build_review_prompt(
 
           PR body:
           {pr_body}
-
+          {history_section}
           AI PR meta JSON:
           {pr_meta_json}
 
@@ -404,7 +430,7 @@ def main() -> None:
 
     if mode == "triage":
         if not args.issue_file or not args.fields_file:
-            parser.error("triage 模式需要 --issue-file 和 --fields-file")
+            parser.error("triage mode requires --issue-file and --fields-file")
         prompt, gov = _build_triage_prompt(
             issue=read_json(args.issue_file),
             fields=read_json(args.fields_file),
@@ -415,7 +441,7 @@ def main() -> None:
         if args.review_context_file:
             if not args.pr_file or not args.pr_meta_file:
                 parser.error(
-                    "fix retry 模式需要 --pr-file --pr-meta-file --review-context-file"
+                    "fix retry mode requires --pr-file --pr-meta-file --review-context-file"
                 )
             prompt, gov = _build_fix_loop_prompt(
                 pr=read_json(args.pr_file),
@@ -425,7 +451,7 @@ def main() -> None:
             )
         else:
             if not args.issue_file or not args.fields_file or not args.triage_file:
-                parser.error("fix 模式需要 --issue-file --fields-file --triage-file")
+                parser.error("fix mode requires --issue-file --fields-file --triage-file")
             prompt, gov = _build_fix_prompt(
                 issue=read_json(args.issue_file),
                 fields=read_json(args.fields_file),
@@ -435,7 +461,7 @@ def main() -> None:
 
     elif mode == "review":
         if not args.pr_file or not args.pr_meta_file:
-            parser.error("review 模式需要 --pr-file --pr-meta-file")
+            parser.error("review mode requires --pr-file --pr-meta-file")
         prompt, gov = _build_review_prompt(
             pr=read_json(args.pr_file),
             pr_meta=read_json(args.pr_meta_file),
