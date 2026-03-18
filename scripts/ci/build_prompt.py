@@ -10,6 +10,8 @@ from typing import Any
 
 from scripts.ci._config import get_environment_block, load_ace_config
 from scripts.ci._io_utils import read_json
+from scripts.ci.prompt_governor import govern
+from scripts.ci.result_protocol import PROTOCOL_VERSION
 
 
 _CI_OUTPUT_PREAMBLE = """IMPORTANT: You are running in CI/headless mode. Do NOT ask for confirmation or clarification.
@@ -28,6 +30,43 @@ _CI_OUTPUT_EPILOGUE = """CRITICAL: You MUST return ONLY valid JSON between the m
           AI_RESULT_END
           """
 
+_ENVELOPE_OUTPUT_PREAMBLE = """IMPORTANT: You are running in CI/headless mode. Do NOT ask for confirmation or clarification.
+You MUST output your final result as a single compact result-envelope.v1 JSON object.
+No other output format is accepted. Proceed autonomously.
+"""
+
+_ENVELOPE_OUTPUT_EPILOGUE = f"""CRITICAL: Output ONLY one compact JSON object conforming to {PROTOCOL_VERSION}.
+          Do NOT wrap JSON in markdown code blocks.
+          Do NOT include any text outside the JSON object.
+          Do NOT ask for user confirmation. Output the envelope immediately after analysis.
+
+          Required envelope structure:
+          {{
+            "protocol_version": "{PROTOCOL_VERSION}",
+            "mode": "<MODE>",
+            "status": "ok",
+            "result": {{ <mode-specific fields here> }},
+            "diagnostics": null
+          }}
+          """
+
+
+def _protocol_mode() -> str:
+    """Return ACE_RESULT_PROTOCOL_MODE; default is 'legacy'."""
+    return os.environ.get("ACE_RESULT_PROTOCOL_MODE", "legacy").strip().lower()
+
+
+def _output_preamble() -> str:
+    if _protocol_mode() in {"dual-read", "strict-envelope"}:
+        return _ENVELOPE_OUTPUT_PREAMBLE
+    return _CI_OUTPUT_PREAMBLE
+
+
+def _output_epilogue(mode: str) -> str:
+    if _protocol_mode() in {"dual-read", "strict-envelope"}:
+        return _ENVELOPE_OUTPUT_EPILOGUE.replace("<MODE>", mode)
+    return _CI_OUTPUT_EPILOGUE
+
 
 def _build_triage_prompt(
     *, issue: dict[str, Any], fields: dict[str, Any], config_path: str | None = None
@@ -36,6 +75,13 @@ def _build_triage_prompt(
     base_branch = os.environ["BASE_BRANCH"]
     repo_name = os.environ["REPO_NAME"]
     extra_prompt = os.environ.get("EXTRA_PROMPT", "").strip()
+    gov = govern(
+        "triage",
+        extra_prompt=extra_prompt,
+        issue_body=issue.get("body") or "",
+    )
+    extra_prompt = gov.extra_prompt
+    issue_body = gov.issue_body
     config = load_ace_config(config_path)
     environment_block = "\n          ".join(get_environment_block(config).splitlines())
 
@@ -47,7 +93,7 @@ def _build_triage_prompt(
           {extra_prompt}
           """
 
-    prompt = f"""{_CI_OUTPUT_PREAMBLE}
+    prompt = f"""{_output_preamble()}
           You are a strict bug triage agent working inside a Git repository.
 
           Repository: {repo_name}
@@ -66,7 +112,7 @@ def _build_triage_prompt(
           {issue.get("title", "")}
 
           Issue body:
-          {issue.get("body", "")}
+          {issue_body}
 
           Parsed issue fields JSON:
           {json.dumps(fields, ensure_ascii=False, indent=2)}
@@ -89,7 +135,7 @@ def _build_triage_prompt(
             "branch_slug": "short-english-slug-describing-the-bug (e.g. fix-login-crash, null-avatar-url). Use lowercase, hyphens only, max 48 chars. Translate non-English titles to English."
           }}
 
-          {_CI_OUTPUT_EPILOGUE}"""
+          {_output_epilogue("triage")}"""
     return prompt
 
 
@@ -105,6 +151,13 @@ def _build_fix_prompt(
     base_branch = os.environ["BASE_BRANCH"]
     fix_branch = os.environ["FIX_BRANCH"]
     extra_prompt = os.environ.get("EXTRA_PROMPT", "").strip()
+    gov = govern(
+        "issue-fix",
+        extra_prompt=extra_prompt,
+        issue_body=issue.get("body") or "",
+    )
+    extra_prompt = gov.extra_prompt
+    issue_body = gov.issue_body
     config = load_ace_config(config_path)
     environment_block = "\n          ".join(get_environment_block(config).splitlines())
 
@@ -116,7 +169,7 @@ def _build_fix_prompt(
           {extra_prompt}
           """
 
-    prompt = f"""{_CI_OUTPUT_PREAMBLE}
+    prompt = f"""{_output_preamble()}
           You are an autonomous bug-fixing agent working in a Git repository.
 
           Repository: {repo_name}
@@ -138,7 +191,7 @@ def _build_fix_prompt(
           {issue.get("title", "")}
 
           Issue body:
-          {issue.get("body", "")}
+          {issue_body}
 
           Parsed issue fields JSON:
           {json.dumps(fields, ensure_ascii=False, indent=2)}
@@ -158,7 +211,7 @@ def _build_fix_prompt(
 
           IMPORTANT: Keep the JSON compact. Each "details" value must be a short one-line note (≤80 chars), NOT full command output.
 
-          {_CI_OUTPUT_EPILOGUE}"""
+          {_output_epilogue("fix")}"""
     return prompt
 
 
@@ -173,12 +226,22 @@ def _build_fix_loop_prompt(
     pr_number = os.environ["PR_NUMBER"]
     next_round = os.environ["NEXT_ROUND"]
     extra_prompt = os.environ.get("EXTRA_PROMPT", "").strip()
+    gov = govern(
+        "retry-fix",
+        extra_prompt=extra_prompt,
+        pr_body=pr.get("body") or "",
+        pr_meta=pr_meta,
+        review_context=review_ctx,
+    )
+    extra_prompt = gov.extra_prompt
+    pr_body = gov.pr_body
+    pr_meta_json = gov.pr_meta_json
+    review_ctx_json = gov.review_context_json
     config = load_ace_config(config_path)
     environment_block = "\n          ".join(get_environment_block(config).splitlines())
     base_ref = (pr.get("base") or {}).get("ref", "")
     head_ref = (pr.get("head") or {}).get("ref", "")
     pr_title = pr.get("title", "")
-    pr_body = pr.get("body") or ""
 
     extra_section = ""
     if extra_prompt:
@@ -188,7 +251,7 @@ def _build_fix_loop_prompt(
           {extra_prompt}
           """
 
-    prompt = f"""{_CI_OUTPUT_PREAMBLE}
+    prompt = f"""{_output_preamble()}
           You are an autonomous bug-fixing agent working on an existing pull request branch.
 
           Repository: {repo_name}
@@ -214,10 +277,10 @@ def _build_fix_loop_prompt(
           {pr_body}
 
           AI PR meta JSON:
-          {json.dumps(pr_meta, ensure_ascii=False, indent=2)}
+          {pr_meta_json}
 
           Latest AI review JSON:
-          {json.dumps(review_ctx, ensure_ascii=False, indent=2)}
+          {review_ctx_json}
 
           Required JSON schema:
           {{
@@ -231,7 +294,7 @@ def _build_fix_loop_prompt(
 
           IMPORTANT: Keep the JSON compact. Each "details" value must be a short one-line note (≤80 chars), NOT full command output.
 
-          {_CI_OUTPUT_EPILOGUE}"""
+          {_output_epilogue("fix")}"""
     return prompt
 
 
@@ -241,12 +304,20 @@ def _build_review_prompt(
     repo_name = os.environ["REPO_NAME"]
     pr_number = os.environ["PR_NUMBER"]
     extra_prompt = os.environ.get("EXTRA_PROMPT", "").strip()
+    gov = govern(
+        "review",
+        extra_prompt=extra_prompt,
+        pr_body=pr.get("body") or "",
+        pr_meta=pr_meta,
+    )
+    extra_prompt = gov.extra_prompt
+    pr_body = gov.pr_body
+    pr_meta_json = gov.pr_meta_json
     config = load_ace_config(config_path)
     environment_block = "\n          ".join(get_environment_block(config).splitlines())
     base_ref = (pr.get("base") or {}).get("ref", "")
     head_ref = (pr.get("head") or {}).get("ref", "")
     pr_title = pr.get("title", "")
-    pr_body = pr.get("body") or ""
 
     extra_section = ""
     if extra_prompt:
@@ -256,7 +327,7 @@ def _build_review_prompt(
           {extra_prompt}
           """
 
-    prompt = f"""{_CI_OUTPUT_PREAMBLE}
+    prompt = f"""{_output_preamble()}
           You are a strict pull request reviewer.
 
           Repository: {repo_name}
@@ -280,7 +351,7 @@ def _build_review_prompt(
           {pr_body}
 
           AI PR meta JSON:
-          {json.dumps(pr_meta, ensure_ascii=False, indent=2)}
+          {pr_meta_json}
 
           Required JSON schema:
           {{
@@ -305,7 +376,7 @@ def _build_review_prompt(
             "recommended_checks": ["optional command or test"]
           }}
 
-          {_CI_OUTPUT_EPILOGUE}"""
+          {_output_epilogue("review")}"""
     return prompt
 
 
