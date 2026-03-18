@@ -1,4 +1,4 @@
-name: Ace Review Worker
+name: Ace Review
 on:
   workflow_call:
     inputs:
