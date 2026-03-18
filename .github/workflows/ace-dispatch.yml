@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       route_to: ${{ steps.set_route.outputs.route_to }}
-      route_params: ${{ steps.set_route.outputs.route_params }}
+      route_params: ${{ toJSON(steps.set_route.outputs.route_params) }}
     env:
       PYTHONPATH: ${{ github.workspace }}/.ace-assistant
     steps:
@@ -185,7 +185,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       route_to: ${{ steps.set_route.outputs.route_to }}
-      route_params: ${{ steps.set_route.outputs.route_params }}
+      route_params: ${{ toJSON(steps.set_route.outputs.route_params) }}
     steps:
       - name: Handle ChatOps issue_comment event
         id: chatops_parse
@@ -340,7 +340,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       route_to: ${{ steps.set_route.outputs.route_to }}
-      route_params: ${{ steps.set_route.outputs.route_params }}
+      route_params: ${{ toJSON(steps.set_route.outputs.route_params) }}
     steps:
       - name: Checkout business repository for config access
         uses: actions/checkout@v4
@@ -422,7 +422,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       route_to: ${{ steps.set_route.outputs.route_to }}
-      route_params: ${{ steps.set_route.outputs.route_params }}
+      route_params: ${{ toJSON(steps.set_route.outputs.route_params) }}
     steps:
       - name: Set route output
         id: set_route
