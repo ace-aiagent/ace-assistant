@@ -97,6 +97,26 @@ def _extract_text_from_jsonl(raw_stdout: str) -> str:
     return "".join(parts)
 
 
+def _is_jsonl_event_stream(raw_stdout: str) -> bool:
+    event_like_count = 0
+    for line in raw_stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            event = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        event_type = event.get("type")
+        if isinstance(event_type, str) and event_type:
+            event_like_count += 1
+            if event_like_count >= 2:
+                return True
+    return False
+
+
 def _parse_result(combined: str, *, is_jsonl: bool) -> dict[str, object]:
     """从 agent 输出中提取 AI_RESULT 标记内的 JSON。
 
@@ -169,12 +189,7 @@ def main() -> None:
     raw_stdout = "".join(stdout_buf)
     raw_stderr = "".join(stderr_buf)
 
-    is_jsonl = False
-    for line in raw_stdout.splitlines():
-        stripped = line.strip()
-        if stripped:
-            is_jsonl = stripped.startswith("{")
-            break
+    is_jsonl = _is_jsonl_event_stream(raw_stdout)
 
     if is_jsonl:
         combined_for_log = strip_ansi(raw_stdout + "\n" + raw_stderr)

@@ -438,6 +438,29 @@ def test_main_jsonl_mode_extracts_result_from_text_events(monkeypatch: pytest.Mo
     assert result["verdict"] == "CONFIRMED_BUG"
 
 
+def test_main_jsonl_mode_with_non_json_prefix_still_extracts_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    prompt_file = tmp_path / "prompt.md"
+    output_file = tmp_path / "result.json"
+    prompt_file.write_text("prompt", encoding="utf-8")
+
+    jsonl_lines = "\n".join([
+        "[TODO-DIAG] session.idle fired",
+        _make_jsonl_step_event("step_start"),
+        _make_jsonl_text_event("AI_RESULT_BEGIN\n"),
+        _make_jsonl_text_event('{"ok": true}\n'),
+        _make_jsonl_text_event("AI_RESULT_END\n"),
+        _make_jsonl_step_event("step_finish"),
+    ]) + "\n"
+
+    _mock_popen(monkeypatch, stdout_text=jsonl_lines)
+
+    _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
+
+    assert json.loads(output_file.read_text(encoding="utf-8")) == {"ok": True}
+
+
 def test_main_jsonl_mode_raises_when_no_markers_in_text(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     prompt_file = tmp_path / "prompt.md"
     output_file = tmp_path / "result.json"
@@ -486,6 +509,5 @@ def test_main_jsonl_mode_handles_non_zero_return_code(monkeypatch: pytest.Monkey
 
     with pytest.raises(SystemExit):
         _run_main(monkeypatch, prompt_file=prompt_file, output_file=output_file)
-
 
 
