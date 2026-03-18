@@ -120,6 +120,7 @@ jobs:
           set -euo pipefail
           DIAG="triage_result.json.diagnostics.json"
           if [ -f "$DIAG" ]; then
+            echo "Protocol diagnostics: $DIAG"
             echo "Protocol error_code: $(jq -r '.error_code // "unknown"' "$DIAG")"
           fi
       - name: Prepare triage outputs
@@ -195,6 +196,7 @@ jobs:
           set -euo pipefail
           DIAG="fix_result.json.diagnostics.json"
           if [ -f "$DIAG" ]; then
+            echo "Protocol diagnostics: $DIAG"
             echo "Protocol error_code: $(jq -r '.error_code // "unknown"' "$DIAG")"
           fi
       - name: Check whether issue fix changed code
@@ -446,6 +448,7 @@ jobs:
           set -euo pipefail
           DIAG="fix_result.json.diagnostics.json"
           if [ -f "$DIAG" ]; then
+            echo "Protocol diagnostics: $DIAG"
             echo "Protocol error_code: $(jq -r '.error_code // "unknown"' "$DIAG")"
           fi
       - name: Check whether PR fix changed code

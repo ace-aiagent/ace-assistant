@@ -235,6 +235,7 @@ jobs:
           set -euo pipefail
           DIAG="review_result.json.diagnostics.json"
           if [ -f "$DIAG" ]; then
+            echo "Protocol diagnostics: $DIAG"
             echo "Protocol error_code: $(jq -r '.error_code // "unknown"' "$DIAG")"
           fi
       - name: Parse review decision

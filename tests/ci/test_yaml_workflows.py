@@ -120,6 +120,7 @@ def assert_protocol_diagnostics_follow_run_opencode_steps(steps: list[dict]) -> 
         output_file = extract_output_file(step["run"])
         assert f'DIAG="{output_file}.diagnostics.json"' in diagnostics_run
         assert "if [ -f \"$DIAG\" ]; then" in diagnostics_run
+        assert "Protocol diagnostics:" in diagnostics_run
         assert "Protocol error_code:" in diagnostics_run
         assert 'jq -r \' .error_code // "unknown" \' ' not in diagnostics_run
         assert "jq -r '.error_code // \"unknown\"' \"$DIAG\"" in diagnostics_run
