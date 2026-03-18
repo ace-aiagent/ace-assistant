@@ -29,7 +29,9 @@ _CI_OUTPUT_EPILOGUE = """CRITICAL: You MUST return ONLY valid JSON between the m
           """
 
 
-def _build_triage_prompt(*, issue: dict[str, Any], fields: dict[str, Any], config_path: str | None = None) -> str:
+def _build_triage_prompt(
+    *, issue: dict[str, Any], fields: dict[str, Any], config_path: str | None = None
+) -> str:
     issue_number = os.environ["ISSUE_NUMBER"]
     base_branch = os.environ["BASE_BRANCH"]
     repo_name = os.environ["REPO_NAME"]
@@ -92,7 +94,11 @@ def _build_triage_prompt(*, issue: dict[str, Any], fields: dict[str, Any], confi
 
 
 def _build_fix_prompt(
-    *, issue: dict[str, Any], fields: dict[str, Any], triage: dict[str, Any], config_path: str | None = None
+    *,
+    issue: dict[str, Any],
+    fields: dict[str, Any],
+    triage: dict[str, Any],
+    config_path: str | None = None,
 ) -> str:
     repo_name = os.environ["REPO_NAME"]
     issue_number = os.environ["ISSUE_NUMBER"]
@@ -123,7 +129,7 @@ def _build_fix_prompt(
           Task:
           - Fix the confirmed bug described below.
           - Make the smallest correct change.
-          - Update tests if needed.
+          - Update or add tests if needed.
           - Run focused verification commands when feasible.
           - Do not change unrelated code.
           - Do not create commits yourself. The workflow will commit for you.
@@ -157,7 +163,11 @@ def _build_fix_prompt(
 
 
 def _build_fix_loop_prompt(
-    *, pr: dict[str, Any], pr_meta: dict[str, Any], review_ctx: dict[str, Any], config_path: str | None = None
+    *,
+    pr: dict[str, Any],
+    pr_meta: dict[str, Any],
+    review_ctx: dict[str, Any],
+    config_path: str | None = None,
 ) -> str:
     repo_name = os.environ["REPO_NAME"]
     pr_number = os.environ["PR_NUMBER"]
@@ -225,7 +235,9 @@ def _build_fix_loop_prompt(
     return prompt
 
 
-def _build_review_prompt(*, pr: dict[str, Any], pr_meta: dict[str, Any], config_path: str | None = None) -> str:
+def _build_review_prompt(
+    *, pr: dict[str, Any], pr_meta: dict[str, Any], config_path: str | None = None
+) -> str:
     repo_name = os.environ["REPO_NAME"]
     pr_number = os.environ["PR_NUMBER"]
     extra_prompt = os.environ.get("EXTRA_PROMPT", "").strip()
@@ -326,7 +338,9 @@ def main() -> None:
     elif mode == "fix":
         if args.review_context_file:
             if not args.pr_file or not args.pr_meta_file:
-                parser.error("fix retry 模式需要 --pr-file --pr-meta-file --review-context-file")
+                parser.error(
+                    "fix retry 模式需要 --pr-file --pr-meta-file --review-context-file"
+                )
             prompt = _build_fix_loop_prompt(
                 pr=read_json(args.pr_file),
                 pr_meta=read_json(args.pr_meta_file),
