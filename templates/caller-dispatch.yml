@@ -158,6 +158,10 @@ jobs:
           SAFE_ROUTE_PARAMS='{}'
           PARSE_OK=false
 
+          # Debug: show what we received
+          echo "::debug::RAW_ROUTE_PARAMS length: ${#RAW_ROUTE_PARAMS}"
+          echo "::debug::RAW_ROUTE_PARAMS preview: ${RAW_ROUTE_PARAMS:0:200}"
+
           # Try parse: direct object -> stringified JSON -> double-stringified JSON
           if [[ -n "$RAW_ROUTE_PARAMS" ]] && jq -e 'type == "object"' >/dev/null 2>&1 <<< "$RAW_ROUTE_PARAMS"; then
             SAFE_ROUTE_PARAMS="$RAW_ROUTE_PARAMS"
