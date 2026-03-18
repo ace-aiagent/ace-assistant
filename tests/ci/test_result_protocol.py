@@ -189,3 +189,41 @@ def test_validate_envelope_skips_result_schema_for_status_error() -> None:
     envelope["result"] = {}
 
     result_protocol.validate_envelope(envelope, requested_mode="triage")
+
+
+def test_fix_mode_with_only_followups_passes() -> None:
+    """Valid issue-fix result with only followups field."""
+    envelope = _load_fixture("fix_issue_envelope_ok.json")
+    assert "followups" in envelope["result"]
+    assert "remaining_risks" not in envelope["result"]
+    result_protocol.validate_envelope(envelope, requested_mode="fix")
+
+
+def test_fix_mode_with_only_remaining_risks_passes() -> None:
+    """Valid retry-fix result with only remaining_risks field."""
+    envelope = _load_fixture("fix_retry_envelope_ok.json")
+    assert "remaining_risks" in envelope["result"]
+    assert "followups" not in envelope["result"]
+    result_protocol.validate_envelope(envelope, requested_mode="fix")
+
+
+def test_fix_mode_with_both_variants_fails() -> None:
+    """fix result with both followups and remaining_risks should fail."""
+    envelope = _load_fixture("fix_issue_envelope_ok.json")
+    envelope["result"]["remaining_risks"] = ["some risk"]
+
+    with pytest.raises(result_protocol.ProtocolValidationError) as exc_info:
+        result_protocol.validate_envelope(envelope, requested_mode="fix")
+
+    assert exc_info.value.error_code == "INVALID_RESULT_SCHEMA"
+
+
+def test_fix_mode_with_neither_variant_fails() -> None:
+    """fix result with neither followups nor remaining_risks should fail."""
+    envelope = _load_fixture("fix_issue_envelope_ok.json")
+    envelope["result"].pop("followups")
+
+    with pytest.raises(result_protocol.ProtocolValidationError) as exc_info:
+        result_protocol.validate_envelope(envelope, requested_mode="fix")
+
+    assert exc_info.value.error_code == "INVALID_RESULT_SCHEMA"

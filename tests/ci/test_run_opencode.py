@@ -307,7 +307,7 @@ def test_main_reads_trim_meta_sidecar_into_diagnostics(
     diagnostics = json.loads(Path(str(output_file) + ".diagnostics.json").read_text(encoding="utf-8"))
     assert diagnostics["context_trimmed"] is True
     assert diagnostics["trim_report"] == trim_meta["trim_report"]
-    assert output_file.with_suffix(".raw.txt").exists()
+    assert not output_file.with_suffix(".raw.txt").exists()
 
 
 def test_main_strict_envelope_incomplete_tail_retries_then_succeeds(

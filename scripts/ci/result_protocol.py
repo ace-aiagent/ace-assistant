@@ -36,6 +36,15 @@ def _validate_result_schema(mode: str, result: dict) -> None:
             f"result 缺少必要字段: {sorted(missing)}",
         )
 
+    if mode == "fix":
+        has_followups = "followups" in result
+        has_remaining_risks = "remaining_risks" in result
+        if has_followups == has_remaining_risks:
+            raise ProtocolValidationError(
+                "INVALID_RESULT_SCHEMA",
+                "fix result must have exactly one of 'followups' (issue-fix) or 'remaining_risks' (retry-fix)",
+            )
+
 
 class ProtocolValidationError(ValueError):
     def __init__(self, error_code: str, message: str) -> None:
