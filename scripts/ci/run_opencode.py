@@ -380,31 +380,16 @@ def _is_retriable_parse_error(exc: Exception) -> bool:
 
 
 def _parse_result(combined: str, *, is_jsonl: bool) -> dict[str, object]:
-        try:
-            parse_result = _parse_result_with_meta(
-                combined_for_parse,
-                is_jsonl=is_jsonl,
-                protocol_mode=protocol_mode,
-                requested_mode=requested_mode,
-            )
-        except (ResultParseError, ProtocolValidationError) as exc:
-            last_parse_error = exc
-            if attempt < max_attempts and _is_retriable_parse_error(exc):
-                continue
-
-            if output_path.exists():
-                output_path.unlink()
-
-            raw_log_path.write_text("\n\n".join(attempt_logs), encoding="utf-8")
-            error_code = exc.error_code
-            _write_diagnostics(
-                parser_mode="legacy" if protocol_mode == "legacy" else "envelope",
-                fallback_used=False,
-                attempt=attempt,
-                legacy_fallback_reason=None,
-                error_code=error_code,
-            )
-            raise SystemExit(str(exc)) from exc
+    try:
+        result = _parse_result_with_meta(
+            combined,
+            is_jsonl=is_jsonl,
+            protocol_mode=_protocol_mode(),
+            requested_mode="triage",
+        )
+        return result.payload
+    except (ResultParseError, ProtocolValidationError) as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def main() -> None:
