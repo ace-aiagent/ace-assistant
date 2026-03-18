@@ -71,6 +71,7 @@ jobs:
     secrets:
       OPENCODE_AUTH_JSON_B64: ${{ secrets.OPENCODE_AUTH_JSON_B64 }}
       GH_PAT: ${{ secrets.GH_PAT }}
+      BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
 
   route-fix:
     needs: dispatch
