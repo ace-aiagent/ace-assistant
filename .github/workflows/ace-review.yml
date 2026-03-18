@@ -256,7 +256,7 @@ jobs:
       - name: Submit approval and finalize meta
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'APPROVED'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ inputs.pr_number }}
           HEAD_SHA: ${{ steps.guard.outputs.head_sha }}
@@ -281,7 +281,7 @@ jobs:
       - name: Submit changes requested
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ inputs.pr_number }}
         shell: bash
