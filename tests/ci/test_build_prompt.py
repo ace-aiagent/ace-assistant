@@ -779,17 +779,17 @@ class TestBuildHistorySection:
         assert hints["pr_meta"] is build_prompt.PRMeta
 
     def test_empty_history_returns_empty_string(self) -> None:
-        pr_meta: dict[str, Any] = {"review_history": [], "fix_history": []}
+        pr_meta: build_prompt.PRMeta = {"review_history": [], "fix_history": []}
         result = build_prompt._build_history_section(pr_meta)
         assert result == ""
 
     def test_no_history_fields_returns_empty_string(self) -> None:
-        pr_meta: dict[str, Any] = {}
+        pr_meta: build_prompt.PRMeta = {}
         result = build_prompt._build_history_section(pr_meta)
         assert result == ""
 
     def test_review_history_only(self) -> None:
-        pr_meta = {
+        pr_meta: build_prompt.PRMeta = {
             "review_history": [
                 {"round": 1, "decision": "CHANGES_REQUESTED", "summary": "Found issues", "blocking_count": 2}
             ],
@@ -800,9 +800,10 @@ class TestBuildHistorySection:
         assert "Review#1: CHANGES_REQUESTED" in result
         assert "Found issues" in result
         assert "2 blocking issues" in result
+        assert "Found issues..." not in result
 
     def test_fix_history_only(self) -> None:
-        pr_meta = {
+        pr_meta: build_prompt.PRMeta = {
             "review_history": [],
             "fix_history": [
                 {"round": 1, "summary": "Fixed the bug", "changed_files": "src/main.py"}
@@ -812,9 +813,10 @@ class TestBuildHistorySection:
         assert "### Previous Rounds Summary" in result
         assert "Fix#1: Fixed the bug" in result
         assert "files: src/main.py" in result
+        assert "Fix#1: Fixed the bug..." not in result
 
     def test_mixed_review_and_fix_history(self) -> None:
-        pr_meta = {
+        pr_meta: build_prompt.PRMeta = {
             "review_history": [
                 {"round": 1, "decision": "CHANGES_REQUESTED", "summary": "First review", "blocking_count": 1}
             ],
@@ -827,7 +829,7 @@ class TestBuildHistorySection:
         assert "Fix#1: First fix" in result
 
     def test_history_truncated_to_last_three(self) -> None:
-        pr_meta = {
+        pr_meta: build_prompt.PRMeta = {
             "review_history": [
                 {"round": 1, "decision": "APPROVED", "summary": "Old review", "blocking_count": 0},
                 {"round": 2, "decision": "CHANGES_REQUESTED", "summary": "Middle review", "blocking_count": 1},
@@ -848,7 +850,7 @@ class TestBuildHistorySection:
 
     def test_summary_truncated_to_80_chars(self) -> None:
         long_summary = "A" * 100
-        pr_meta = {
+        pr_meta: build_prompt.PRMeta = {
             "review_history": [
                 {"round": 1, "decision": "APPROVED", "summary": long_summary, "blocking_count": 0}
             ],
@@ -861,7 +863,7 @@ class TestBuildHistorySection:
 
     def test_files_truncated_to_50_chars(self) -> None:
         long_files = "file1.py, file2.py, file3.py, file4.py, file5.py, file6.py, file7.py"
-        pr_meta = {
+        pr_meta: build_prompt.PRMeta = {
             "review_history": [],
             "fix_history": [
                 {"round": 1, "summary": "Fix", "changed_files": long_files}
@@ -871,7 +873,7 @@ class TestBuildHistorySection:
         assert long_files[:50] in result
 
     def test_missing_round_defaults_to_question_mark(self) -> None:
-        pr_meta = {
+        pr_meta: build_prompt.PRMeta = {
             "review_history": [
                 {"decision": "APPROVED", "summary": "Review", "blocking_count": 0}
             ],
@@ -881,7 +883,7 @@ class TestBuildHistorySection:
         assert "Review#?: APPROVED" in result
 
     def test_missing_decision_defaults_to_unknown(self) -> None:
-        pr_meta = {
+        pr_meta: build_prompt.PRMeta = {
             "review_history": [
                 {"round": 1, "summary": "Review", "blocking_count": 0}
             ],
@@ -892,7 +894,7 @@ class TestBuildHistorySection:
 
     def test_mixed_history_in_chronological_order(self) -> None:
         """验证 Review 和 Fix 按 round 字段排序，而非按类型分组"""
-        pr_meta = {
+        pr_meta: build_prompt.PRMeta = {
             "review_history": [
                 {"round": 1, "decision": "CHANGES_REQUESTED", "summary": "First review", "blocking_count": 2},
                 {"round": 3, "decision": "APPROVED", "summary": "Third review", "blocking_count": 0},
@@ -914,7 +916,7 @@ class TestBuildHistorySection:
 
     def test_history_truncated_to_last_three_total(self) -> None:
         """验证总共只保留最近 3 条记录（而不是各保留 3 条）"""
-        pr_meta = {
+        pr_meta: build_prompt.PRMeta = {
             "review_history": [
                 {"round": 1, "decision": "APPROVED", "summary": "Round 1 review", "blocking_count": 0},
                 {"round": 3, "decision": "CHANGES_REQUESTED", "summary": "Round 3 review", "blocking_count": 1},

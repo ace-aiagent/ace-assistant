@@ -103,25 +103,28 @@ def _build_history_section(pr_meta: PRMeta) -> str:
 
     history_items: list[tuple[int, str]] = []
 
+    def _truncate_with_ellipsis(text: str, limit: int) -> str:
+        return text[:limit] + ("..." if len(text) > limit else "")
+
     for review in review_history:
         round_num = review.get("round") or 0
         display_round = review.get("round") or "?"
         decision = review.get("decision", "UNKNOWN")
-        summary = review.get("summary", "")[:80]
+        summary = _truncate_with_ellipsis(review.get("summary", ""), 80)
         blocking = review.get("blocking_count", 0)
         history_items.append((
             round_num,
-            f"- Review#{display_round}: {decision} - {summary}... ({blocking} blocking issues)",
+            f"- Review#{display_round}: {decision} - {summary} ({blocking} blocking issues)",
         ))
 
     for fix in fix_history:
         round_num = fix.get("round") or 0
         display_round = fix.get("round") or "?"
-        summary = fix.get("summary", "")[:80]
+        summary = _truncate_with_ellipsis(fix.get("summary", ""), 80)
         files = fix.get("changed_files", "")[:50]
         history_items.append((
             round_num,
-            f"- Fix#{display_round}: {summary}... [files: {files}]",
+            f"- Fix#{display_round}: {summary} [files: {files}]",
         ))
 
     history_items.sort(key=lambda x: x[0])
