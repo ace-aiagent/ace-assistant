@@ -349,6 +349,20 @@ class TestAceReviewWorkflowMetadataPersistence:
 
         assert content.count("- name: Dispatch ace-fix workflow") == 1
 
+    def test_review_workflow_updates_labels_with_github_token_after_changes_requested(
+        self,
+    ) -> None:
+        workflow_file = get_project_root() / ".github" / "workflows" / "reusable-review.yml"
+        content = workflow_file.read_text(encoding="utf-8")
+
+        assert "- name: Update labels after changes requested" in content
+        assert (
+            "steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED'" in content
+        )
+        assert 'GH_TOKEN: ${{ github.token }}' in content
+        assert '--remove-label "ai:reviewing"' in content
+        assert '--add-label "ai:changes-requested"' in content
+
 
 class TestProtocolRolloutControls:
     def test_ace_fix_run_opencode_steps_have_protocol_mode_env(self) -> None:

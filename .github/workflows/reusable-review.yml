@@ -306,6 +306,15 @@ jobs:
         run: |
           set -euo pipefail
           gh pr review "$PR_NUMBER" --repo "$REPO" --request-changes --body-file review_summary.md
+      - name: Update labels after changes requested
+        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
           gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "ai:reviewing" --remove-label "ai:review-approved" --add-label "ai:changes-requested" || true
       - name: Check loop round guard
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true'
