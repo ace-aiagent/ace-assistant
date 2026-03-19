@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import get_type_hints
+from typing import Any
 
 import pytest
 
@@ -769,3 +771,239 @@ def test_build_prompt_writes_trim_meta_sidecar(
     assert "trim_report" in trim_meta
     assert isinstance(trim_meta["context_trimmed"], bool)
     assert isinstance(trim_meta["trim_report"], dict)
+
+
+class TestBuildHistorySection:
+    def test_build_history_section_uses_typed_pr_meta(self) -> None:
+        hints = get_type_hints(build_prompt._build_history_section)
+        assert hints["pr_meta"] is build_prompt.PRMeta
+
+    def test_empty_history_returns_empty_string(self) -> None:
+        pr_meta: build_prompt.PRMeta = {"review_history": [], "fix_history": []}
+        result = build_prompt._build_history_section(pr_meta)
+        assert result == ""
+
+    def test_no_history_fields_returns_empty_string(self) -> None:
+        pr_meta: build_prompt.PRMeta = {}
+        result = build_prompt._build_history_section(pr_meta)
+        assert result == ""
+
+    def test_review_history_only(self) -> None:
+        pr_meta: build_prompt.PRMeta = {
+            "review_history": [
+                {"round": 1, "decision": "CHANGES_REQUESTED", "summary": "Found issues", "blocking_count": 2}
+            ],
+            "fix_history": [],
+        }
+        result = build_prompt._build_history_section(pr_meta)
+        assert "### Previous Rounds Summary" in result
+        assert "Review#1: CHANGES_REQUESTED" in result
+        assert "Found issues" in result
+        assert "2 blocking issues" in result
+        assert "Found issues..." not in result
+
+    def test_fix_history_only(self) -> None:
+        pr_meta: build_prompt.PRMeta = {
+            "review_history": [],
+            "fix_history": [
+                {"round": 1, "summary": "Fixed the bug", "changed_files": "src/main.py"}
+            ],
+        }
+        result = build_prompt._build_history_section(pr_meta)
+        assert "### Previous Rounds Summary" in result
+        assert "Fix#1: Fixed the bug" in result
+        assert "files: src/main.py" in result
+        assert "Fix#1: Fixed the bug..." not in result
+
+    def test_mixed_review_and_fix_history(self) -> None:
+        pr_meta: build_prompt.PRMeta = {
+            "review_history": [
+                {"round": 1, "decision": "CHANGES_REQUESTED", "summary": "First review", "blocking_count": 1}
+            ],
+            "fix_history": [
+                {"round": 1, "summary": "First fix", "changed_files": "file1.py"}
+            ],
+        }
+        result = build_prompt._build_history_section(pr_meta)
+        assert "Review#1: CHANGES_REQUESTED" in result
+        assert "Fix#1: First fix" in result
+
+    def test_history_truncated_to_last_three(self) -> None:
+        pr_meta: build_prompt.PRMeta = {
+            "review_history": [
+                {"round": 1, "decision": "APPROVED", "summary": "Old review", "blocking_count": 0},
+                {"round": 2, "decision": "CHANGES_REQUESTED", "summary": "Middle review", "blocking_count": 1},
+                {"round": 3, "decision": "CHANGES_REQUESTED", "summary": "Recent review", "blocking_count": 2},
+                {"round": 4, "decision": "APPROVED", "summary": "Latest review", "blocking_count": 0},
+            ],
+            "fix_history": [],
+        }
+        result = build_prompt._build_history_section(pr_meta)
+        oldest_review_should_not_appear = "Review#1: APPROVED" not in result
+        recent_three_should_appear = (
+            "Review#2: CHANGES_REQUESTED" in result
+            and "Review#3: CHANGES_REQUESTED" in result
+            and "Review#4: APPROVED" in result
+        )
+        assert oldest_review_should_not_appear
+        assert recent_three_should_appear
+
+    def test_summary_truncated_to_80_chars(self) -> None:
+        long_summary = "A" * 100
+        pr_meta: build_prompt.PRMeta = {
+            "review_history": [
+                {"round": 1, "decision": "APPROVED", "summary": long_summary, "blocking_count": 0}
+            ],
+            "fix_history": [],
+        }
+        result = build_prompt._build_history_section(pr_meta)
+        assert "A" * 80 in result
+        assert "A" * 81 not in result
+        assert "..." in result
+
+    def test_files_truncated_to_50_chars(self) -> None:
+        long_files = "file1.py, file2.py, file3.py, file4.py, file5.py, file6.py, file7.py"
+        pr_meta: build_prompt.PRMeta = {
+            "review_history": [],
+            "fix_history": [
+                {"round": 1, "summary": "Fix", "changed_files": long_files}
+            ],
+        }
+        result = build_prompt._build_history_section(pr_meta)
+        assert long_files[:50] in result
+
+    def test_missing_round_defaults_to_question_mark(self) -> None:
+        pr_meta: build_prompt.PRMeta = {
+            "review_history": [
+                {"decision": "APPROVED", "summary": "Review", "blocking_count": 0}
+            ],
+            "fix_history": [],
+        }
+        result = build_prompt._build_history_section(pr_meta)
+        assert "Review#?: APPROVED" in result
+
+    def test_missing_decision_defaults_to_unknown(self) -> None:
+        pr_meta: build_prompt.PRMeta = {
+            "review_history": [
+                {"round": 1, "summary": "Review", "blocking_count": 0}
+            ],
+            "fix_history": [],
+        }
+        result = build_prompt._build_history_section(pr_meta)
+        assert "Review#1: UNKNOWN" in result
+
+    def test_mixed_history_in_chronological_order(self) -> None:
+        """验证 Review 和 Fix 按 round 字段排序，而非按类型分组"""
+        pr_meta: build_prompt.PRMeta = {
+            "review_history": [
+                {"round": 1, "decision": "CHANGES_REQUESTED", "summary": "First review", "blocking_count": 2},
+                {"round": 3, "decision": "APPROVED", "summary": "Third review", "blocking_count": 0},
+            ],
+            "fix_history": [
+                {"round": 2, "summary": "Second fix", "changed_files": "file2.py"},
+                {"round": 4, "summary": "Fourth fix", "changed_files": "file4.py"},
+            ],
+        }
+        result = build_prompt._build_history_section(pr_meta)
+        # 验证按 round 排序，而非按类型分组
+        # 正确顺序: Review#1 -> Fix#2 -> Review#3 -> Fix#4
+        review1_pos = result.find("Review#1: CHANGES_REQUESTED")
+        fix2_pos = result.find("Fix#2: Second fix")
+        review3_pos = result.find("Review#3: APPROVED")
+        fix4_pos = result.find("Fix#4: Fourth fix")
+        assert review1_pos < fix2_pos < review3_pos < fix4_pos, \
+            "History should be sorted by round, not grouped by type"
+
+    def test_history_truncated_to_last_three_total(self) -> None:
+        """验证总共只保留最近 3 条记录（而不是各保留 3 条）"""
+        pr_meta: build_prompt.PRMeta = {
+            "review_history": [
+                {"round": 1, "decision": "APPROVED", "summary": "Round 1 review", "blocking_count": 0},
+                {"round": 3, "decision": "CHANGES_REQUESTED", "summary": "Round 3 review", "blocking_count": 1},
+            ],
+            "fix_history": [
+                {"round": 2, "summary": "Round 2 fix", "changed_files": "file2.py"},
+                {"round": 4, "summary": "Round 4 fix", "changed_files": "file4.py"},
+            ],
+        }
+        result = build_prompt._build_history_section(pr_meta)
+        # 总共 4 条记录，应该截断为 3 条
+        assert "Review#1: APPROVED" not in result, "Oldest round should be excluded"
+        assert "Review#3: CHANGES_REQUESTED" in result
+        assert "Fix#2: Round 2 fix" in result
+        assert "Fix#4: Round 4 fix" in result
+
+    def test_review_prompt_contains_history_section(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        write_json,
+        set_ci_env,
+    ) -> None:
+        pr_file = write_json("pr.json", {"title": "PR", "body": "", "base": {"ref": "main"}, "head": {"ref": "fix"}})
+        meta_file = write_json(
+            "meta.json",
+            {
+                "fix_round": 1,
+                "review_history": [
+                    {"round": 1, "decision": "CHANGES_REQUESTED", "summary": "First review found issues", "blocking_count": 2}
+                ],
+                "fix_history": [
+                    {"round": 1, "summary": "Fixed the issues", "changed_files": "src/main.py"}
+                ],
+            },
+        )
+        output = tmp_path / "review_prompt.md"
+
+        set_ci_env(PR_NUMBER="1", REPO_NAME="o/r")
+        _run_main(monkeypatch, ["--mode", "review", "--pr-file", str(pr_file), "--pr-meta-file", str(meta_file), "--output", str(output)])
+
+        text = output.read_text(encoding="utf-8")
+        assert "### Previous Rounds Summary" in text
+        assert "Review#1: CHANGES_REQUESTED" in text
+        assert "Fix#1: Fixed the issues" in text
+
+    def test_fix_loop_prompt_contains_history_section(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        write_json,
+        set_ci_env,
+    ) -> None:
+        pr_file = write_json("pr.json", {"title": "PR", "body": "", "base": {"ref": "main"}, "head": {"ref": "fix"}})
+        meta_file = write_json(
+            "meta.json",
+            {
+                "fix_round": 1,
+                "review_history": [
+                    {"round": 1, "decision": "CHANGES_REQUESTED", "summary": "Review found bugs", "blocking_count": 3}
+                ],
+                "fix_history": [
+                    {"round": 1, "summary": "Attempted fix", "changed_files": "bug.py"}
+                ],
+            },
+        )
+        review_file = write_json("review.json", {"decision": "CHANGES_REQUESTED"})
+        output = tmp_path / "fix_loop_prompt.md"
+
+        set_ci_env(PR_NUMBER="1", NEXT_ROUND="2", REPO_NAME="o/r")
+        _run_main(
+            monkeypatch,
+            [
+                "--mode",
+                "fix",
+                "--pr-file",
+                str(pr_file),
+                "--pr-meta-file",
+                str(meta_file),
+                "--review-context-file",
+                str(review_file),
+                "--output",
+                str(output),
+            ],
+        )
+
+        text = output.read_text(encoding="utf-8")
+        assert "### Previous Rounds Summary" in text
+        assert "Review#1: CHANGES_REQUESTED" in text
+        assert "Fix#1: Attempted fix" in text

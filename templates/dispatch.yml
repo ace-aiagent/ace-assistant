@@ -1,11 +1,11 @@
-# Caller workflow for AI Dispatch — place in your repo's .github/workflows/dispatch.yml
+# Caller workflow for Dispatch Trigger — place in your repo's .github/workflows/dispatch.yml
 # Replace ORG/ace-assistant with your actual org/repo path for the ace-assistant repository.
 #
 # This caller handles event listening (issues, comments, PRs) and delegates the
 # triage/routing logic to the reusable dispatch workflow. After the reusable workflow
 # determines the route (fix or review), this caller dispatches the appropriate workflow.
 
-name: AI Dispatch
+name: Dispatch Trigger
 
 on:
   issues:

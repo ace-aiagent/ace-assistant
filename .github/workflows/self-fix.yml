@@ -1,7 +1,7 @@
-# Self workflow for AI Fix — used by ace-assistant repository itself
+# Self workflow for Fix Trigger — used by ace-assistant repository itself
 # Replace ace-aiagent/ace-assistant with your actual org/repo path for the ace-assistant repository.
 
-name: AI Fix
+name: Fix Trigger
 
 on:
   workflow_dispatch:

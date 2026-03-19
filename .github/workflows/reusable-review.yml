@@ -284,7 +284,26 @@ jobs:
           gh pr review "$PR_NUMBER" --repo "$REPO" --approve --body-file review_summary.md
           gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "ai:reviewing" --remove-label "ai:changes-requested" --remove-label "ai:loop-exceeded" --add-label "ai:review-approved"
            cp pr_meta.json pr_meta_new.json
-          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=approved --set last_reviewed_head_sha="$HEAD_SHA" --set-int failure_count=0 --set-json last_error=null --set-json lock_owner=null --set-json auto_loop="$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )"
+          # Build review history entry
+          current_round="$(jq -r '.fix_round // 1' pr_meta.json)"
+          review_summary_text="$(jq -r '.summary' review_result.json)"
+          blocking_count="$(jq -r '.blocking_issues | length' review_result.json)"
+          review_entry="$(jq -n \
+            --arg round "$current_round" \
+            --arg decision "APPROVED" \
+            --arg summary "${review_summary_text:0:200}" \
+            --argjson issues "$blocking_count" \
+            '{round: ($round | tonumber), decision: $decision, summary: $summary, blocking_count: $issues, timestamp: now | todate}')"
+          # Append to review_history array (keep last 3)
+          python -m scripts.ci.update_pr_meta_json \
+            --meta-file pr_meta_new.json \
+            --set status=approved \
+            --set last_reviewed_head_sha="$HEAD_SHA" \
+            --set-int failure_count=0 \
+            --set-json last_error=null \
+            --set-json lock_owner=null \
+            --set-json auto_loop="$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )" \
+            --set-json review_history="$(jq -n --argjson entry "$review_entry" --argjson history "$(jq '.review_history // []' pr_meta.json)" '$history + [$entry] | .[-3:]')"
           python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
       - name: Upsert approval meta comment
         if: steps.guard.outputs.should_exit != 'true' && steps.meta_mode.outputs.persist_meta == 'true' && steps.review_outcome.outputs.decision == 'APPROVED'
@@ -342,7 +361,23 @@ jobs:
           gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "ai:loop-exceeded"
           gh issue comment "$PR_NUMBER" --repo "$REPO" --body "Maximum fix rounds ($MAX_ROUNDS) reached. Please review manually."
            cp pr_meta.json pr_meta_new.json
-          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=loop-exceeded --set last_reviewed_head_sha="$HEAD_SHA" --set-json lock_owner=null --set-json auto_loop="$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )"
+          # Build review history entry
+          current_round="$(jq -r '.fix_round // 1' pr_meta.json)"
+          review_summary_text="$(jq -r '.summary' review_result.json)"
+          blocking_count="$(jq -r '.blocking_issues | length' review_result.json)"
+          review_entry="$(jq -n \
+            --arg round "$current_round" \
+            --arg decision "CHANGES_REQUESTED" \
+            --arg summary "${review_summary_text:0:200}" \
+            --argjson issues "$blocking_count" \
+            '{round: ($round | tonumber), decision: $decision, summary: $summary, blocking_count: $issues, timestamp: now | todate}')"
+          python -m scripts.ci.update_pr_meta_json \
+            --meta-file pr_meta_new.json \
+            --set status=loop-exceeded \
+            --set last_reviewed_head_sha="$HEAD_SHA" \
+            --set-json lock_owner=null \
+            --set-json auto_loop="$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )" \
+            --set-json review_history="$(jq -n --argjson entry "$review_entry" --argjson history "$(jq '.review_history // []' pr_meta.json)" '$history + [$entry] | .[-3:]')"
           python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
       - name: Upsert loop exceeded meta comment
         if: steps.guard.outputs.should_exit != 'true' && steps.meta_mode.outputs.persist_meta == 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry != 'true'
@@ -378,7 +413,24 @@ jobs:
         run: |
           set -euo pipefail
            cp pr_meta.json pr_meta_new.json
-          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=fix_requested --set last_reviewed_head_sha="$HEAD_SHA" --set-int fix_round="$NEXT_ROUND" --set-json lock_owner=null --set-json auto_loop="$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )"
+          # Build review history entry
+          current_round="$(jq -r '.fix_round // 1' pr_meta.json)"
+          review_summary_text="$(jq -r '.summary' review_result.json)"
+          blocking_count="$(jq -r '.blocking_issues | length' review_result.json)"
+          review_entry="$(jq -n \
+            --arg round "$current_round" \
+            --arg decision "CHANGES_REQUESTED" \
+            --arg summary "${review_summary_text:0:200}" \
+            --argjson issues "$blocking_count" \
+            '{round: ($round | tonumber), decision: $decision, summary: $summary, blocking_count: $issues, timestamp: now | todate}')"
+          python -m scripts.ci.update_pr_meta_json \
+            --meta-file pr_meta_new.json \
+            --set status=fix_requested \
+            --set last_reviewed_head_sha="$HEAD_SHA" \
+            --set-int fix_round="$NEXT_ROUND" \
+            --set-json lock_owner=null \
+            --set-json auto_loop="$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )" \
+            --set-json review_history="$(jq -n --argjson entry "$review_entry" --argjson history "$(jq '.review_history // []' pr_meta.json)" '$history + [$entry] | .[-3:]')"
           python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
       - name: Upsert fix-requested meta comment
         if: steps.guard.outputs.should_exit != 'true' && steps.meta_mode.outputs.persist_meta == 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true' && steps.round_guard.outputs.can_retry == 'true' && steps.failure_guard.outputs.can_proceed == 'true'
@@ -433,7 +485,23 @@ jobs:
         run: |
           set -euo pipefail
            cp pr_meta.json pr_meta_new.json
-          python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=changes-requested --set last_reviewed_head_sha="$HEAD_SHA" --set-json lock_owner=null --set-json auto_loop="$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )"
+          # Build review history entry
+          current_round="$(jq -r '.fix_round // 1' pr_meta.json)"
+          review_summary_text="$(jq -r '.summary' review_result.json)"
+          blocking_count="$(jq -r '.blocking_issues | length' review_result.json)"
+          review_entry="$(jq -n \
+            --arg round "$current_round" \
+            --arg decision "CHANGES_REQUESTED" \
+            --arg summary "${review_summary_text:0:200}" \
+            --argjson issues "$blocking_count" \
+            '{round: ($round | tonumber), decision: $decision, summary: $summary, blocking_count: $issues, timestamp: now | todate}')"
+          python -m scripts.ci.update_pr_meta_json \
+            --meta-file pr_meta_new.json \
+            --set status=changes-requested \
+            --set last_reviewed_head_sha="$HEAD_SHA" \
+            --set-json lock_owner=null \
+            --set-json auto_loop="$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )" \
+            --set-json review_history="$(jq -n --argjson entry "$review_entry" --argjson history "$(jq '.review_history // []' pr_meta.json)" '$history + [$entry] | .[-3:]')"
           python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
       - name: Upsert manual mode meta comment
         if: steps.guard.outputs.should_exit != 'true' && steps.meta_mode.outputs.persist_meta == 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop != 'true'
