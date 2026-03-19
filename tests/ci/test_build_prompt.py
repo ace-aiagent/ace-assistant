@@ -885,6 +885,47 @@ class TestBuildHistorySection:
         result = build_prompt._build_history_section(pr_meta)
         assert "Review#1: UNKNOWN" in result
 
+    def test_mixed_history_in_chronological_order(self) -> None:
+        """验证 Review 和 Fix 按 round 字段排序，而非按类型分组"""
+        pr_meta = {
+            "review_history": [
+                {"round": 1, "decision": "CHANGES_REQUESTED", "summary": "First review", "blocking_count": 2},
+                {"round": 3, "decision": "APPROVED", "summary": "Third review", "blocking_count": 0},
+            ],
+            "fix_history": [
+                {"round": 2, "summary": "Second fix", "changed_files": "file2.py"},
+                {"round": 4, "summary": "Fourth fix", "changed_files": "file4.py"},
+            ],
+        }
+        result = build_prompt._build_history_section(pr_meta)
+        # 验证按 round 排序，而非按类型分组
+        # 正确顺序: Review#1 -> Fix#2 -> Review#3 -> Fix#4
+        review1_pos = result.find("Review#1: CHANGES_REQUESTED")
+        fix2_pos = result.find("Fix#2: Second fix")
+        review3_pos = result.find("Review#3: APPROVED")
+        fix4_pos = result.find("Fix#4: Fourth fix")
+        assert review1_pos < fix2_pos < review3_pos < fix4_pos, \
+            "History should be sorted by round, not grouped by type"
+
+    def test_history_truncated_to_last_three_total(self) -> None:
+        """验证总共只保留最近 3 条记录（而不是各保留 3 条）"""
+        pr_meta = {
+            "review_history": [
+                {"round": 1, "decision": "APPROVED", "summary": "Round 1 review", "blocking_count": 0},
+                {"round": 3, "decision": "CHANGES_REQUESTED", "summary": "Round 3 review", "blocking_count": 1},
+            ],
+            "fix_history": [
+                {"round": 2, "summary": "Round 2 fix", "changed_files": "file2.py"},
+                {"round": 4, "summary": "Round 4 fix", "changed_files": "file4.py"},
+            ],
+        }
+        result = build_prompt._build_history_section(pr_meta)
+        # 总共 4 条记录，应该截断为 3 条
+        assert "Review#1: APPROVED" not in result, "Oldest round should be excluded"
+        assert "Review#3: CHANGES_REQUESTED" in result
+        assert "Fix#2: Round 2 fix" in result
+        assert "Fix#4: Round 4 fix" in result
+
     def test_review_prompt_contains_history_section(
         self,
         monkeypatch: pytest.MonkeyPatch,
