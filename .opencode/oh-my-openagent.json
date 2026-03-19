@@ -8,6 +8,10 @@
             "model": "github-copilot/gpt-5.3-codex",
             "variant": "medium"
         },
+        "oracle": {
+            "model": "github-copilot/gpt-5.4",
+            "variant": "high"
+        },
         "librarian": {
             "model": "bailian-coding-plan/MiniMax-M2.5"
         },
