@@ -92,14 +92,14 @@ def _full_config_payload() -> dict[str, Any]:
         },
         "workflow_validation": {
             "required_inputs": {
-                "ace-dispatch.yml": ["target_type", "target_number", "action"],
-                "ace-fix.yml": ["target_type", "target_number", "auto_loop", "extra_prompt", "triage_json"],
-                "ace-review.yml": ["pr_number", "auto_loop", "extra_prompt"],
+                "reusable-dispatch.yml": ["target_type", "target_number", "action"],
+                "reusable-fix.yml": ["target_type", "target_number", "auto_loop", "extra_prompt", "triage_json"],
+                "reusable-review.yml": ["pr_number", "auto_loop", "extra_prompt"],
             },
             "expected_concurrency_prefixes": {
-                "ace-dispatch.yml": "ace-dispatch-",
-                "ace-fix.yml": "ace-fix-",
-                "ace-review.yml": "ace-review-",
+                "reusable-dispatch.yml": "ace-dispatch-",
+                "reusable-fix.yml": "ace-fix-",
+                "reusable-review.yml": "ace-review-",
             },
             "required_markers": ["ace-pr-meta", "ace-review-context"],
         },

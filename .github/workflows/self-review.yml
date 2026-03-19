@@ -1,0 +1,50 @@
+# Self workflow for AI Review — used by ace-assistant repository itself
+# Replace ace-aiagent/ace-assistant with your actual org/repo path for the ace-assistant repository.
+
+name: AI Review
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: string
+      auto_loop:
+        description: 'Whether to auto-dispatch fix workflow after changes requested'
+        required: false
+        type: string
+        default: "false"
+      extra_prompt:
+        description: 'Additional user instructions for the AI reviewer'
+        required: false
+        type: string
+        default: ""
+      force:
+        description: 'Force reset PR state before review'
+        required: false
+        type: string
+        default: "false"
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: ace-review-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    uses: ace-aiagent/ace-assistant/.github/workflows/reusable-review.yml@v1
+    with:
+      pr_number: ${{ inputs.pr_number }}
+      auto_loop: ${{ inputs.auto_loop }}
+      extra_prompt: ${{ inputs.extra_prompt }}
+      force: ${{ inputs.force }}
+    secrets:
+      OPENCODE_AUTH_JSON_B64: ${{ secrets.OPENCODE_AUTH_JSON_B64 }}
+      GH_PAT: ${{ secrets.GH_PAT }}
+      BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}

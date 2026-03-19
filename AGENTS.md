@@ -7,6 +7,28 @@
 - `ace-assistant` 仓库提供可复用 workflow、composite actions 与 CI 脚本；
 - 通过统一配置（`ace-config.json`）与密钥，实现可复制的 AI 工程化流程。
 
+# 技术栈 & 命令
+
+## 技术栈
+
+- **Python**: 3.12+（CI 脚本使用纯标准库 Python，仅 `validate_workflow_structure.py` 需要 PyYAML）
+- **GitHub Actions**: workflow_call 可复用工作流、composite actions
+- **PyYAML**: 用于 workflow 结构验证
+
+## 常用命令
+
+```bash
+# 安装测试依赖
+pip install pytest pyyaml
+
+# 运行测试
+PYTHONPATH=. python -m pytest tests/ -v
+
+# 调用 CI 脚本（以模块方式运行）
+python -m scripts.ci.build_prompt --help
+python -m scripts.ci.parse_issue_form --help
+```
+
 # **不可妥协**
 
 - 严格使用 TDD 开发范式，每个功能都要先写测试，运行测试，失败后再写实现，直到测试通过
