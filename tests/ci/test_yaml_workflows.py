@@ -310,6 +310,13 @@ class TestYamlWorkflowValidation:
 
 
 class TestAceReviewWorkflowMetadataPersistence:
+    def test_fix_workflow_documents_changed_files_storage_vs_display_limits(self) -> None:
+        workflow_file = get_project_root() / ".github" / "workflows" / "reusable-fix.yml"
+        content = workflow_file.read_text(encoding="utf-8")
+
+        assert "changed_files is stored with 100 chars" in content
+        assert "_build_history_section() truncates to 50 chars for prompt display" in content
+
     def test_review_workflow_has_metadata_persistence_gate(self) -> None:
         workflow_file = get_project_root() / ".github" / "workflows" / "reusable-review.yml"
         content = workflow_file.read_text(encoding="utf-8")

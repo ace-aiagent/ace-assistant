@@ -499,6 +499,8 @@ jobs:
           if [[ -f fix_result.json ]]; then
             fix_round="$(jq -r '.fix_round // 1' "$meta_file")"
             fix_summary_text="$(jq -r '.summary // ""' fix_result.json)"
+            # NOTE: changed_files is stored with 100 chars for metadata completeness,
+            # while _build_history_section() truncates to 50 chars for prompt display readability.
             # Validate changed_files is an array before joining
             changed_files=""
             if jq -e '(.changed_files | type) == "array"' fix_result.json >/dev/null 2>&1; then
