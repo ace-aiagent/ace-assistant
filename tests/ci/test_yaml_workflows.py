@@ -387,6 +387,25 @@ class TestAceReviewWorkflowMetadataPersistence:
         assert '--remove-label "ai:reviewing"' in content
         assert '--add-label "ai:changes-requested"' in content
 
+    def test_review_workflow_submit_approval_uses_rest_api_with_pat_token(
+        self,
+    ) -> None:
+        steps = get_job_steps("reusable-review.yml", "review")
+        step = get_step_by_name(steps, "Submit approval and finalize meta")
+
+        env = step.get("env")
+        assert isinstance(env, dict)
+        assert env.get("GH_TOKEN") == "${{ secrets.GH_PAT }}"
+
+        run_script = step.get("run")
+        assert isinstance(run_script, str)
+        assert "gh api \"repos/$REPO/pulls/$PR_NUMBER/reviews\" --method POST" in run_script
+        assert "-F body=@review_summary.md" in run_script
+        assert "gh api \"repos/$REPO/issues/$PR_NUMBER/labels\" --method POST" in run_script
+        assert "labels[]=ai:review-approved" in run_script
+        assert "gh pr review" not in run_script
+        assert "gh pr edit" not in run_script
+
 
 class TestProtocolRolloutControls:
     def test_ace_fix_run_opencode_steps_have_protocol_mode_env(self) -> None:
@@ -542,10 +561,24 @@ class TestCriticalLabelTransitionsFailFast:
             assert isinstance(run_script, str)
 
             for label in labels:
-                assert f'--add-label "{label}"' in run_script
-                assert not re.search(
-                    rf'--add-label "{label}"\s*\|\|\s*true', run_script
-                ), f"Critical label transition must fail-fast for {step_name}:{label}"
+                has_cli_label_add = f'--add-label "{label}"' in run_script
+                has_rest_label_add = f'"labels":["{label}"]' in run_script
+                has_rest_label_array_arg = f'labels[]={label}' in run_script
+                assert (
+                    has_cli_label_add or has_rest_label_add or has_rest_label_array_arg
+                ), (
+                    f"Missing critical label add operation for {step_name}:{label}"
+                )
+
+                if has_cli_label_add:
+                    assert not re.search(
+                        rf'--add-label "{label}"\s*\|\|\s*true', run_script
+                    ), f"Critical label transition must fail-fast for {step_name}:{label}"
+                if has_rest_label_add or has_rest_label_array_arg:
+                    assert not re.search(
+                        r'gh api "repos/\$REPO/issues/\$PR_NUMBER/labels"\s+--method\s+POST.*\|\|\s*true',
+                        run_script,
+                    ), f"Critical REST label transition must fail-fast for {step_name}:{label}"
 
 
 

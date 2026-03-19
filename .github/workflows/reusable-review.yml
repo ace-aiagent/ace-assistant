@@ -281,8 +281,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh pr review "$PR_NUMBER" --repo "$REPO" --approve --body-file review_summary.md
-          gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "ai:reviewing" --remove-label "ai:changes-requested" --remove-label "ai:loop-exceeded" --add-label "ai:review-approved"
+          gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --method POST -f event=APPROVE -F body=@review_summary.md
+          gh api "repos/$REPO/issues/$PR_NUMBER/labels/ai:reviewing" --method DELETE || true
+          gh api "repos/$REPO/issues/$PR_NUMBER/labels/ai:changes-requested" --method DELETE || true
+          gh api "repos/$REPO/issues/$PR_NUMBER/labels/ai:loop-exceeded" --method DELETE || true
+          gh api "repos/$REPO/issues/$PR_NUMBER/labels" --method POST -f "labels[]=ai:review-approved"
            cp pr_meta.json pr_meta_new.json
           # Build review history entry
           current_round="$(jq -r '.fix_round // 1' pr_meta.json)"
