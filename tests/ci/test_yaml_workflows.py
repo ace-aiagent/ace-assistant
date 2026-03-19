@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from scripts.ci._config import get_workflow_validation, load_ace_config
+
 
 PROTOCOL_MODE_EXPRESSION = (
     "${{ inputs.ace_protocol_mode || vars.ACE_RESULT_PROTOCOL_MODE || 'legacy' }}"
@@ -580,3 +582,61 @@ class TestCompositeActionValidation:
         assert 'if [[ -d "$file" ]]' in run_script
         assert 'rm -rf "$file"' in run_script
         assert 'rm -f "$file"' in run_script
+
+
+class TestWorkflowStructureValidationMigration:
+    def test_reusable_workflows_use_workflow_call_and_required_inputs_from_config(
+        self,
+    ) -> None:
+        config = load_ace_config()
+        workflow_validation = get_workflow_validation(config)
+
+        for workflow_name, required_inputs in workflow_validation.required_inputs.items():
+            workflow = load_workflow_yaml(workflow_name)
+            on_config = workflow.get("on")
+            if on_config is None:
+                on_config = workflow.get(True)
+
+            assert isinstance(on_config, dict), f"{workflow_name} missing on: mapping"
+
+            workflow_call = on_config.get("workflow_call")
+            assert isinstance(workflow_call, dict), (
+                f"{workflow_name} must define workflow_call trigger"
+            )
+
+            inputs = workflow_call.get("inputs")
+            assert isinstance(inputs, dict), (
+                f"{workflow_name} workflow_call.inputs must be a mapping"
+            )
+
+            missing_inputs = [name for name in required_inputs if name not in inputs]
+            assert not missing_inputs, (
+                f"{workflow_name} missing required workflow_call inputs: {missing_inputs}"
+            )
+
+    def test_required_markers_exist_in_workflows_and_ci_scripts(self) -> None:
+        config = load_ace_config()
+        workflow_validation = get_workflow_validation(config)
+
+        workflow_contents = [
+            path.read_text(encoding="utf-8") for path in get_ai_workflow_files()
+        ]
+        ci_script_contents = [
+            path.read_text(encoding="utf-8") for path in get_scripts_ci_python_files()
+        ]
+
+        for marker in workflow_validation.required_markers:
+            assert any(marker in content for content in workflow_contents), (
+                f"marker '{marker}' not found in reusable workflow files"
+            )
+            assert any(marker in content for content in ci_script_contents), (
+                f"marker '{marker}' not found in scripts/ci/*.py"
+            )
+
+    def test_runtime_workflow_structure_validator_script_is_removed(self) -> None:
+        validator_script = (
+            get_project_root() / "scripts" / "ci" / "validate_workflow_structure.py"
+        )
+        assert not validator_script.exists(), (
+            "validate_workflow_structure.py should be removed after migration to pytest"
+        )
