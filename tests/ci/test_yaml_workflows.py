@@ -24,9 +24,9 @@ def get_ai_workflow_files() -> list[Path]:
     workflow_dir = root / ".github" / "workflows"
     return sorted(
         [
-            workflow_dir / "ace-dispatch.yml",
-            workflow_dir / "ace-fix.yml",
-            workflow_dir / "ace-review.yml",
+            workflow_dir / "reusable-dispatch.yml",
+            workflow_dir / "reusable-fix.yml",
+            workflow_dir / "reusable-review.yml",
         ]
     )
 
@@ -274,7 +274,7 @@ class TestYamlWorkflowValidation:
     def test_ai_fix_cleanup_files_do_not_remove_tracked_actions_or_scripts(
         self,
     ) -> None:
-        workflow_file = get_project_root() / ".github" / "workflows" / "ace-fix.yml"
+        workflow_file = get_project_root() / ".github" / "workflows" / "reusable-fix.yml"
 
         with open(workflow_file, encoding="utf-8") as f:
             data = yaml.safe_load(f)
@@ -302,7 +302,7 @@ class TestYamlWorkflowValidation:
 
 class TestAceReviewWorkflowMetadataPersistence:
     def test_review_workflow_has_metadata_persistence_gate(self) -> None:
-        workflow_file = get_project_root() / ".github" / "workflows" / "ace-review.yml"
+        workflow_file = get_project_root() / ".github" / "workflows" / "reusable-review.yml"
         content = workflow_file.read_text(encoding="utf-8")
 
         assert "- name: Determine metadata persistence mode" in content
@@ -311,7 +311,7 @@ class TestAceReviewWorkflowMetadataPersistence:
         assert 'echo "persist_meta=false" >> "$GITHUB_OUTPUT"' in content
 
     def test_review_workflow_meta_comments_are_guarded_by_persistence_mode(self) -> None:
-        workflow_file = get_project_root() / ".github" / "workflows" / "ace-review.yml"
+        workflow_file = get_project_root() / ".github" / "workflows" / "reusable-review.yml"
         content = workflow_file.read_text(encoding="utf-8")
 
         assert "steps.meta_mode.outputs.persist_meta == 'true'" in content
@@ -323,14 +323,14 @@ class TestAceReviewWorkflowMetadataPersistence:
         assert "- name: Upsert manual mode meta comment" in content
 
     def test_force_reset_upsert_is_guarded_by_persistence_mode(self) -> None:
-        workflow_file = get_project_root() / ".github" / "workflows" / "ace-review.yml"
+        workflow_file = get_project_root() / ".github" / "workflows" / "reusable-review.yml"
         content = workflow_file.read_text(encoding="utf-8")
 
         assert 'PERSIST_META: ${{ steps.meta_mode.outputs.persist_meta }}' in content
         assert 'if [[ "$PERSIST_META" == "true" ]]; then' in content
 
     def test_review_workflow_uses_current_input_auto_loop_for_meta_updates(self) -> None:
-        workflow_file = get_project_root() / ".github" / "workflows" / "ace-review.yml"
+        workflow_file = get_project_root() / ".github" / "workflows" / "reusable-review.yml"
         content = workflow_file.read_text(encoding="utf-8")
 
         expected = '$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )'
@@ -338,13 +338,13 @@ class TestAceReviewWorkflowMetadataPersistence:
         assert "jq '.auto_loop // true' pr_meta.json" not in content
 
     def test_review_workflow_rollback_meta_upsert_is_guarded_by_persistence_mode(self) -> None:
-        workflow_file = get_project_root() / ".github" / "workflows" / "ace-review.yml"
+        workflow_file = get_project_root() / ".github" / "workflows" / "reusable-review.yml"
         content = workflow_file.read_text(encoding="utf-8")
 
         assert "steps.meta_mode.outputs.persist_meta == 'true' && (failure() || cancelled())" in content
 
     def test_review_workflow_has_single_fix_dispatch_path(self) -> None:
-        workflow_file = get_project_root() / ".github" / "workflows" / "ace-review.yml"
+        workflow_file = get_project_root() / ".github" / "workflows" / "reusable-review.yml"
         content = workflow_file.read_text(encoding="utf-8")
 
         assert content.count("- name: Dispatch ace-fix workflow") == 1
@@ -352,30 +352,30 @@ class TestAceReviewWorkflowMetadataPersistence:
 
 class TestProtocolRolloutControls:
     def test_ace_fix_run_opencode_steps_have_protocol_mode_env(self) -> None:
-        steps = get_job_steps("ace-fix.yml", "fix")
+        steps = get_job_steps("reusable-fix.yml", "fix")
 
         assert len(get_run_opencode_step_indexes(steps)) == 3
         assert_run_opencode_steps_have_protocol_mode_env(steps)
 
     def test_ace_review_run_opencode_step_has_protocol_mode_env(self) -> None:
-        steps = get_job_steps("ace-review.yml", "review")
+        steps = get_job_steps("reusable-review.yml", "review")
 
         assert len(get_run_opencode_step_indexes(steps)) == 1
         assert_run_opencode_steps_have_protocol_mode_env(steps)
 
     def test_ace_fix_has_protocol_diagnostics_steps(self) -> None:
-        steps = get_job_steps("ace-fix.yml", "fix")
+        steps = get_job_steps("reusable-fix.yml", "fix")
 
         assert steps.count({"name": PROTOCOL_DIAGNOSTICS_STEP_NAME}) == 0
         assert_protocol_diagnostics_follow_run_opencode_steps(steps)
 
     def test_ace_review_has_protocol_diagnostics_step(self) -> None:
-        steps = get_job_steps("ace-review.yml", "review")
+        steps = get_job_steps("reusable-review.yml", "review")
 
         assert_protocol_diagnostics_follow_run_opencode_steps(steps)
 
     def test_workflows_expose_protocol_mode_input(self) -> None:
-        for workflow_name in ("ace-fix.yml", "ace-review.yml"):
+        for workflow_name in ("reusable-fix.yml", "reusable-review.yml"):
             workflow = load_workflow_yaml(workflow_name)
             inputs = workflow[True]["workflow_call"]["inputs"]
 
@@ -388,7 +388,7 @@ class TestProtocolRolloutControls:
             }
 
     def test_ace_fix_build_prompt_steps_have_protocol_mode_env(self) -> None:
-        steps = get_job_steps("ace-fix.yml", "fix")
+        steps = get_job_steps("reusable-fix.yml", "fix")
         indexes = get_build_prompt_step_indexes(steps)
 
         assert len(indexes) == 3, f"Expected 3 build_prompt steps, found {len(indexes)}"
@@ -399,7 +399,7 @@ class TestProtocolRolloutControls:
             assert env.get("ACE_RESULT_PROTOCOL_MODE") == PROTOCOL_MODE_EXPRESSION
 
     def test_ace_review_build_prompt_step_has_protocol_mode_env(self) -> None:
-        steps = get_job_steps("ace-review.yml", "review")
+        steps = get_job_steps("reusable-review.yml", "review")
         indexes = get_build_prompt_step_indexes(steps)
 
         assert len(indexes) == 1, f"Expected 1 build_prompt step, found {len(indexes)}"
@@ -409,7 +409,7 @@ class TestProtocolRolloutControls:
         assert env.get("ACE_RESULT_PROTOCOL_MODE") == PROTOCOL_MODE_EXPRESSION
 
     def test_ace_fix_dispatch_steps_forward_protocol_mode(self) -> None:
-        steps = get_job_steps("ace-fix.yml", "fix")
+        steps = get_job_steps("reusable-fix.yml", "fix")
         indexes = get_dispatch_step_indexes(steps)
 
         assert len(indexes) == 2, f"Expected 2 dispatch steps, found {len(indexes)}"
@@ -420,7 +420,7 @@ class TestProtocolRolloutControls:
             )
 
     def test_ace_review_dispatch_step_forwards_protocol_mode(self) -> None:
-        steps = get_job_steps("ace-review.yml", "review")
+        steps = get_job_steps("reusable-review.yml", "review")
         indexes = get_dispatch_step_indexes(steps)
 
         assert len(indexes) == 1, f"Expected 1 dispatch step, found {len(indexes)}"
@@ -431,7 +431,7 @@ class TestProtocolRolloutControls:
 
     def test_ace_review_fix_params_includes_protocol_mode(self) -> None:
         content = (
-            get_project_root() / ".github" / "workflows" / "ace-review.yml"
+            get_project_root() / ".github" / "workflows" / "reusable-review.yml"
         ).read_text(encoding="utf-8")
         assert 'ace_protocol_mode' in content and 'fix_params' in content, (
             "fix_params JSON must include ace_protocol_mode key"
