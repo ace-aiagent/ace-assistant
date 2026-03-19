@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import get_type_hints
 from typing import Any
 
 import pytest
@@ -773,6 +774,10 @@ def test_build_prompt_writes_trim_meta_sidecar(
 
 
 class TestBuildHistorySection:
+    def test_build_history_section_uses_typed_pr_meta(self) -> None:
+        hints = get_type_hints(build_prompt._build_history_section)
+        assert hints["pr_meta"] is build_prompt.PRMeta
+
     def test_empty_history_returns_empty_string(self) -> None:
         pr_meta: dict[str, Any] = {"review_history": [], "fix_history": []}
         result = build_prompt._build_history_section(pr_meta)

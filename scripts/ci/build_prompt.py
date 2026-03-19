@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from scripts.ci._config import get_environment_block, load_ace_config
 from scripts.ci._io_utils import read_json
@@ -51,6 +51,24 @@ _ENVELOPE_OUTPUT_EPILOGUE = f"""CRITICAL: Output ONLY one compact JSON object co
           """
 
 
+class ReviewHistoryItem(TypedDict, total=False):
+    round: int
+    decision: str
+    summary: str
+    blocking_count: int
+
+
+class FixHistoryItem(TypedDict, total=False):
+    round: int
+    summary: str
+    changed_files: str
+
+
+class PRMeta(TypedDict, total=False):
+    review_history: list[ReviewHistoryItem]
+    fix_history: list[FixHistoryItem]
+
+
 def _protocol_mode() -> str:
     """Return ACE_RESULT_PROTOCOL_MODE; default is 'legacy'. Raises ValueError for unknown values."""
     mode = os.environ.get("ACE_RESULT_PROTOCOL_MODE", "legacy").strip().lower()
@@ -74,7 +92,7 @@ def _output_epilogue(mode: str) -> str:
     return _CI_OUTPUT_EPILOGUE
 
 
-def _build_history_section(pr_meta: dict[str, Any]) -> str:
+def _build_history_section(pr_meta: PRMeta) -> str:
     review_history = pr_meta.get("review_history", [])
     fix_history = pr_meta.get("fix_history", [])
 
@@ -111,6 +129,15 @@ def _build_history_section(pr_meta: dict[str, Any]) -> str:
         lines.append(line)
 
     return "\n".join(lines) + "\n"
+
+
+def _extract_history_meta(pr_meta: dict[str, Any]) -> PRMeta:
+    review_history = pr_meta.get("review_history")
+    fix_history = pr_meta.get("fix_history")
+    return {
+        "review_history": review_history if isinstance(review_history, list) else [],
+        "fix_history": fix_history if isinstance(fix_history, list) else [],
+    }
 
 
 def _build_triage_prompt(
@@ -287,7 +314,7 @@ def _build_fix_loop_prompt(
     base_ref = (pr.get("base") or {}).get("ref", "")
     head_ref = (pr.get("head") or {}).get("ref", "")
     pr_title = pr.get("title", "")
-    history_section = _build_history_section(pr_meta)
+    history_section = _build_history_section(_extract_history_meta(pr_meta))
 
     extra_section = ""
     if extra_prompt:
@@ -364,7 +391,7 @@ def _build_review_prompt(
     base_ref = (pr.get("base") or {}).get("ref", "")
     head_ref = (pr.get("head") or {}).get("ref", "")
     pr_title = pr.get("title", "")
-    history_section = _build_history_section(pr_meta)
+    history_section = _build_history_section(_extract_history_meta(pr_meta))
 
     extra_section = ""
     if extra_prompt:
