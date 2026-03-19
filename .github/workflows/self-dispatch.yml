@@ -1,11 +1,11 @@
-# Self workflow for AI Dispatch — used by ace-assistant repository itself
+# Self workflow for Dispatch Trigger — used by ace-assistant repository itself
 # Replace ace-aiagent/ace-assistant with your actual org/repo path for the ace-assistant repository.
 #
 # This caller handles event listening (issues, comments, PRs) and delegates the
 # triage/routing logic to the reusable dispatch workflow. After the reusable workflow
 # determines the route (fix or review), this caller dispatches the appropriate workflow.
 
-name: AI Dispatch
+name: Dispatch Trigger
 
 on:
   issues:
