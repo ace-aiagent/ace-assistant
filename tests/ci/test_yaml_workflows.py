@@ -58,6 +58,13 @@ def get_job_steps(workflow_name: str, job_name: str) -> list[dict]:
     return [step for step in steps if isinstance(step, dict)]
 
 
+def get_step_by_name(steps: list[dict], name: str) -> dict:
+    for step in steps:
+        if step.get("name") == name:
+            return step
+    pytest.fail(f"Missing step: {name}")
+
+
 def get_run_opencode_step_indexes(steps: list[dict]) -> list[int]:
     indexes: list[int] = []
     for index, step in enumerate(steps):
@@ -453,6 +460,75 @@ class TestProtocolRolloutControls:
         assert '"ace_protocol_mode"' in content or r'\"ace_protocol_mode\"' in content, (
             "fix_params JSON must include ace_protocol_mode key"
         )
+
+
+class TestCriticalLabelTransitionsFailFast:
+    def test_dispatch_issue_triage_critical_labels_do_not_swallow_failures(self) -> None:
+        steps = get_job_steps("reusable-dispatch.yml", "triage-issue")
+        step = get_step_by_name(steps, "Handle issue event")
+        run_script = step.get("run")
+
+        assert isinstance(run_script, str)
+        assert '--add-label "ai:triaging"' in run_script
+        assert '--add-label "ai:not-a-bug"' in run_script
+        assert '--add-label "ai:needs-human"' in run_script
+        assert '--add-label "ai:confirmed"' in run_script
+        assert '--add-label "ai:fixing"' in run_script
+
+        critical_labels = [
+            "ai:triaging",
+            "ai:not-a-bug",
+            "ai:needs-human",
+            "ai:confirmed",
+            "ai:fixing",
+        ]
+        for label in critical_labels:
+            assert not re.search(rf'--add-label "{label}"\s*\|\|\s*true', run_script), (
+                f"Critical label transition must fail-fast for {label}"
+            )
+
+    def test_fix_issue_critical_labels_do_not_swallow_failures(self) -> None:
+        steps = get_job_steps("reusable-fix.yml", "fix")
+        cases = [
+            ("Comment if base branch is invalid", ["ai:needs-human"]),
+            ("Mark issue as triaging", ["ai:triaging"]),
+            ("Comment and stop for NOT_A_BUG", ["ai:not-a-bug"]),
+            ("Comment and stop for NEEDS_HUMAN", ["ai:needs-human"]),
+            ("Comment and mark issue as confirmed", ["ai:confirmed", "ai:fixing"]),
+            ("Comment and stop if no issue fix changes", ["ai:needs-human"]),
+            ("Add issue PR labels", ["ai:reviewing"]),
+        ]
+
+        for step_name, labels in cases:
+            step = get_step_by_name(steps, step_name)
+            run_script = step.get("run")
+            assert isinstance(run_script, str)
+
+            for label in labels:
+                assert f'--add-label "{label}"' in run_script
+                assert not re.search(
+                    rf'--add-label "{label}"\s*\|\|\s*true', run_script
+                ), f"Critical label transition must fail-fast for {step_name}:{label}"
+
+    def test_review_critical_labels_do_not_swallow_failures(self) -> None:
+        steps = get_job_steps("reusable-review.yml", "review")
+        cases = [
+            ("Mark reviewing labels", ["ai:reviewing"]),
+            ("Submit approval and finalize meta", ["ai:review-approved"]),
+            ("Update labels after changes requested", ["ai:changes-requested"]),
+            ("Mark loop exceeded and finalize meta", ["ai:loop-exceeded"]),
+        ]
+
+        for step_name, labels in cases:
+            step = get_step_by_name(steps, step_name)
+            run_script = step.get("run")
+            assert isinstance(run_script, str)
+
+            for label in labels:
+                assert f'--add-label "{label}"' in run_script
+                assert not re.search(
+                    rf'--add-label "{label}"\s*\|\|\s*true', run_script
+                ), f"Critical label transition must fail-fast for {step_name}:{label}"
 
 
 
