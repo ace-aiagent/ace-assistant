@@ -37,3 +37,4 @@ python -m scripts.ci.parse_issue_form --help
 - commit 遵循 Angular Commit Message Standard, 格式为 `<type>(<scope>): <subject>`
     - type: 可选值为 `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
 - 新建分支或 worktree 的名称要以 `feature/`, `refactor/`, `fix/` 等开头, 不要使用其他前缀
+- 在更改代码后, 要添加或修改测试, 确保测试通过
