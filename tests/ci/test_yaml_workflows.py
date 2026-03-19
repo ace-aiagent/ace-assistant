@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from scripts.ci._config import get_workflow_validation, load_ace_config
+
 
 PROTOCOL_MODE_EXPRESSION = (
     "${{ inputs.ace_protocol_mode || vars.ACE_RESULT_PROTOCOL_MODE || 'legacy' }}"
@@ -56,6 +58,13 @@ def get_job_steps(workflow_name: str, job_name: str) -> list[dict]:
     steps = workflow["jobs"][job_name]["steps"]
     assert isinstance(steps, list)
     return [step for step in steps if isinstance(step, dict)]
+
+
+def get_step_by_name(steps: list[dict], name: str) -> dict:
+    for step in steps:
+        if step.get("name") == name:
+            return step
+    pytest.fail(f"Missing step: {name}")
 
 
 def get_run_opencode_step_indexes(steps: list[dict]) -> list[int]:
@@ -349,6 +358,20 @@ class TestAceReviewWorkflowMetadataPersistence:
 
         assert content.count("- name: Dispatch ace-fix workflow") == 1
 
+    def test_review_workflow_updates_labels_with_github_token_after_changes_requested(
+        self,
+    ) -> None:
+        workflow_file = get_project_root() / ".github" / "workflows" / "reusable-review.yml"
+        content = workflow_file.read_text(encoding="utf-8")
+
+        assert "- name: Update labels after changes requested" in content
+        assert (
+            "steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED'" in content
+        )
+        assert 'GH_TOKEN: ${{ github.token }}' in content
+        assert '--remove-label "ai:reviewing"' in content
+        assert '--add-label "ai:changes-requested"' in content
+
 
 class TestProtocolRolloutControls:
     def test_ace_fix_run_opencode_steps_have_protocol_mode_env(self) -> None:
@@ -441,6 +464,75 @@ class TestProtocolRolloutControls:
         )
 
 
+class TestCriticalLabelTransitionsFailFast:
+    def test_dispatch_issue_triage_critical_labels_do_not_swallow_failures(self) -> None:
+        steps = get_job_steps("reusable-dispatch.yml", "triage-issue")
+        step = get_step_by_name(steps, "Handle issue event")
+        run_script = step.get("run")
+
+        assert isinstance(run_script, str)
+        assert '--add-label "ai:triaging"' in run_script
+        assert '--add-label "ai:not-a-bug"' in run_script
+        assert '--add-label "ai:needs-human"' in run_script
+        assert '--add-label "ai:confirmed"' in run_script
+        assert '--add-label "ai:fixing"' in run_script
+
+        critical_labels = [
+            "ai:triaging",
+            "ai:not-a-bug",
+            "ai:needs-human",
+            "ai:confirmed",
+            "ai:fixing",
+        ]
+        for label in critical_labels:
+            assert not re.search(rf'--add-label "{label}"\s*\|\|\s*true', run_script), (
+                f"Critical label transition must fail-fast for {label}"
+            )
+
+    def test_fix_issue_critical_labels_do_not_swallow_failures(self) -> None:
+        steps = get_job_steps("reusable-fix.yml", "fix")
+        cases = [
+            ("Comment if base branch is invalid", ["ai:needs-human"]),
+            ("Mark issue as triaging", ["ai:triaging"]),
+            ("Comment and stop for NOT_A_BUG", ["ai:not-a-bug"]),
+            ("Comment and stop for NEEDS_HUMAN", ["ai:needs-human"]),
+            ("Comment and mark issue as confirmed", ["ai:confirmed", "ai:fixing"]),
+            ("Comment and stop if no issue fix changes", ["ai:needs-human"]),
+            ("Add issue PR labels", ["ai:reviewing"]),
+        ]
+
+        for step_name, labels in cases:
+            step = get_step_by_name(steps, step_name)
+            run_script = step.get("run")
+            assert isinstance(run_script, str)
+
+            for label in labels:
+                assert f'--add-label "{label}"' in run_script
+                assert not re.search(
+                    rf'--add-label "{label}"\s*\|\|\s*true', run_script
+                ), f"Critical label transition must fail-fast for {step_name}:{label}"
+
+    def test_review_critical_labels_do_not_swallow_failures(self) -> None:
+        steps = get_job_steps("reusable-review.yml", "review")
+        cases = [
+            ("Mark reviewing labels", ["ai:reviewing"]),
+            ("Submit approval and finalize meta", ["ai:review-approved"]),
+            ("Update labels after changes requested", ["ai:changes-requested"]),
+            ("Mark loop exceeded and finalize meta", ["ai:loop-exceeded"]),
+        ]
+
+        for step_name, labels in cases:
+            step = get_step_by_name(steps, step_name)
+            run_script = step.get("run")
+            assert isinstance(run_script, str)
+
+            for label in labels:
+                assert f'--add-label "{label}"' in run_script
+                assert not re.search(
+                    rf'--add-label "{label}"\s*\|\|\s*true', run_script
+                ), f"Critical label transition must fail-fast for {step_name}:{label}"
+
+
 
 
 
@@ -490,3 +582,61 @@ class TestCompositeActionValidation:
         assert 'if [[ -d "$file" ]]' in run_script
         assert 'rm -rf "$file"' in run_script
         assert 'rm -f "$file"' in run_script
+
+
+class TestWorkflowStructureValidationMigration:
+    def test_reusable_workflows_use_workflow_call_and_required_inputs_from_config(
+        self,
+    ) -> None:
+        config = load_ace_config()
+        workflow_validation = get_workflow_validation(config)
+
+        for workflow_name, required_inputs in workflow_validation.required_inputs.items():
+            workflow = load_workflow_yaml(workflow_name)
+            on_config = workflow.get("on")
+            if on_config is None:
+                on_config = workflow.get(True)
+
+            assert isinstance(on_config, dict), f"{workflow_name} missing on: mapping"
+
+            workflow_call = on_config.get("workflow_call")
+            assert isinstance(workflow_call, dict), (
+                f"{workflow_name} must define workflow_call trigger"
+            )
+
+            inputs = workflow_call.get("inputs")
+            assert isinstance(inputs, dict), (
+                f"{workflow_name} workflow_call.inputs must be a mapping"
+            )
+
+            missing_inputs = [name for name in required_inputs if name not in inputs]
+            assert not missing_inputs, (
+                f"{workflow_name} missing required workflow_call inputs: {missing_inputs}"
+            )
+
+    def test_required_markers_exist_in_workflows_and_ci_scripts(self) -> None:
+        config = load_ace_config()
+        workflow_validation = get_workflow_validation(config)
+
+        workflow_contents = [
+            path.read_text(encoding="utf-8") for path in get_ai_workflow_files()
+        ]
+        ci_script_contents = [
+            path.read_text(encoding="utf-8") for path in get_scripts_ci_python_files()
+        ]
+
+        for marker in workflow_validation.required_markers:
+            assert any(marker in content for content in workflow_contents), (
+                f"marker '{marker}' not found in reusable workflow files"
+            )
+            assert any(marker in content for content in ci_script_contents), (
+                f"marker '{marker}' not found in scripts/ci/*.py"
+            )
+
+    def test_runtime_workflow_structure_validator_script_is_removed(self) -> None:
+        validator_script = (
+            get_project_root() / "scripts" / "ci" / "validate_workflow_structure.py"
+        )
+        assert not validator_script.exists(), (
+            "validate_workflow_structure.py should be removed after migration to pytest"
+        )

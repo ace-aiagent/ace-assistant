@@ -202,7 +202,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "ai:review-approved" --remove-label "ai:changes-requested" --remove-label "ai:loop-exceeded" --add-label "ai:reviewing" || true
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "ai:review-approved" --remove-label "ai:changes-requested" --remove-label "ai:loop-exceeded" --add-label "ai:reviewing"
       - name: Checkout PR head branch
         if: steps.guard.outputs.should_exit != 'true'
         shell: bash
@@ -282,7 +282,7 @@ jobs:
         run: |
           set -euo pipefail
           gh pr review "$PR_NUMBER" --repo "$REPO" --approve --body-file review_summary.md
-          gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "ai:reviewing" --remove-label "ai:changes-requested" --remove-label "ai:loop-exceeded" --add-label "ai:review-approved" || true
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "ai:reviewing" --remove-label "ai:changes-requested" --remove-label "ai:loop-exceeded" --add-label "ai:review-approved"
            cp pr_meta.json pr_meta_new.json
           python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=approved --set last_reviewed_head_sha="$HEAD_SHA" --set-int failure_count=0 --set-json last_error=null --set-json lock_owner=null --set-json auto_loop="$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )"
           python -m scripts.ci.build_pr_meta --mode update --input-file pr_meta_new.json --active-operation idle --last-reviewed-head-sha "$HEAD_SHA" --output pr_meta_comment.md
@@ -306,7 +306,16 @@ jobs:
         run: |
           set -euo pipefail
           gh pr review "$PR_NUMBER" --repo "$REPO" --request-changes --body-file review_summary.md
-          gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "ai:reviewing" --remove-label "ai:review-approved" --add-label "ai:changes-requested" || true
+      - name: Update labels after changes requested
+        if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label "ai:reviewing" --remove-label "ai:review-approved" --add-label "ai:changes-requested"
       - name: Check loop round guard
         if: steps.guard.outputs.should_exit != 'true' && steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED' && inputs.auto_loop == 'true'
         id: round_guard
@@ -330,7 +339,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "ai:loop-exceeded" || true
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "ai:loop-exceeded"
           gh issue comment "$PR_NUMBER" --repo "$REPO" --body "Maximum fix rounds ($MAX_ROUNDS) reached. Please review manually."
            cp pr_meta.json pr_meta_new.json
           python -m scripts.ci.update_pr_meta_json --meta-file pr_meta_new.json --set status=loop-exceeded --set last_reviewed_head_sha="$HEAD_SHA" --set-json lock_owner=null --set-json auto_loop="$( [[ "${{ inputs.auto_loop }}" == "true" ]] && echo true || echo false )"
@@ -483,7 +492,7 @@ jobs:
           max_failures="${{ steps.load_error_config.outputs.max_failures }}"
           auto_label="${{ steps.load_error_config.outputs.auto_label }}"
           if [[ "$new_failure_count" -ge "$max_failures" && "$auto_label" == "true" ]]; then
-            gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "ai:needs-human" || true
+            gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "ai:needs-human"
           fi
 
           python -m scripts.ci.upsert_comment \
