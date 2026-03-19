@@ -15,9 +15,9 @@ def get_template_workflow_files() -> list[Path]:
     templates_dir = get_project_root() / "templates"
     return sorted(
         [
-            templates_dir / "caller-dispatch.yml",
-            templates_dir / "caller-fix.yml",
-            templates_dir / "caller-review.yml",
+            templates_dir / "dispatch.yml",
+            templates_dir / "fix.yml",
+            templates_dir / "review.yml",
         ]
     )
 
@@ -32,9 +32,9 @@ class TestTemplateYamlValidation:
     @pytest.mark.parametrize(
         ("workflow_name", "expected_use"),
         [
-            ("caller-dispatch.yml", "ORG/ace-assistant/.github/workflows/ace-dispatch.yml@v1"),
-            ("caller-fix.yml", "ORG/ace-assistant/.github/workflows/ace-fix.yml@v1"),
-            ("caller-review.yml", "ORG/ace-assistant/.github/workflows/ace-review.yml@v1"),
+        ("dispatch.yml", "ORG/ace-assistant/.github/workflows/reusable-dispatch.yml@v1"),
+        ("fix.yml", "ORG/ace-assistant/.github/workflows/reusable-fix.yml@v1"),
+        ("review.yml", "ORG/ace-assistant/.github/workflows/reusable-review.yml@v1"),
         ],
     )
     def test_template_workflow_keeps_reusable_workflow_reference(
@@ -50,7 +50,7 @@ class TestTemplateYamlValidation:
 
 class TestCallerDispatchTemplateRouteParamsSafety:
     def test_route_jobs_validate_and_parse_route_params_via_jq(self) -> None:
-        template_path = get_project_root() / "templates" / "caller-dispatch.yml"
+        template_path = get_project_root() / "templates" / "dispatch.yml"
         content = template_path.read_text(encoding="utf-8")
 
         # Check env var setup
@@ -77,7 +77,7 @@ class TestCallerDispatchTemplateRouteParamsSafety:
 
 class TestCallerReviewTemplateDefaults:
     def test_workflow_dispatch_review_defaults_to_manual_loop_mode(self) -> None:
-        template_path = get_project_root() / "templates" / "caller-review.yml"
+        template_path = get_project_root() / "templates" / "review.yml"
         data = yaml.safe_load(template_path.read_text(encoding="utf-8"))
 
         workflow_dispatch = data[True]["workflow_dispatch"]
@@ -86,7 +86,7 @@ class TestCallerReviewTemplateDefaults:
         assert review_inputs["auto_loop"]["default"] == "false"
 
     def test_caller_review_template_has_single_review_job(self) -> None:
-        template_path = get_project_root() / "templates" / "caller-review.yml"
+        template_path = get_project_root() / "templates" / "review.yml"
         content = template_path.read_text(encoding="utf-8")
 
         assert "trigger-fix:" not in content
@@ -95,7 +95,7 @@ class TestCallerReviewTemplateDefaults:
 
 class TestAceConfigExampleJson:
     def test_ace_config_example_is_valid_json(self) -> None:
-        config_path = get_project_root() / "templates" / "ace-config.example.json"
+        config_path = get_project_root() / "templates" / "config.example.json"
         data = json.loads(config_path.read_text(encoding="utf-8"))
         assert isinstance(data, dict)
         assert "tech_stack" in data

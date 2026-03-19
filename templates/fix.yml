@@ -1,5 +1,5 @@
-# Caller workflow for AI Fix — place in your repo's .github/workflows/ace-fix.yml
-# Replace ace-aiagent/ace-assistant with your actual org/repo path for the ace-assistant repository.
+# Caller workflow for AI Fix — place in your repo's .github/workflows/fix.yml
+# Replace ORG/ace-assistant with your actual org/repo path for the ace-assistant repository.
 
 name: AI Fix
 
@@ -48,7 +48,7 @@ concurrency:
 
 jobs:
   fix:
-    uses: ace-aiagent/ace-assistant/.github/workflows/ace-fix.yml@v1
+    uses: ORG/ace-assistant/.github/workflows/reusable-fix.yml@v1
     with:
       target_type: ${{ inputs.target_type }}
       target_number: ${{ inputs.target_number }}

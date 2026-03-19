@@ -1,4 +1,4 @@
-# Caller workflow for AI Review — place in your repo's .github/workflows/ace-review.yml
+# Self workflow for AI Review — used by ace-assistant repository itself
 # Replace ace-aiagent/ace-assistant with your actual org/repo path for the ace-assistant repository.
 
 name: AI Review
@@ -38,7 +38,7 @@ concurrency:
 
 jobs:
   review:
-    uses: ace-aiagent/ace-assistant/.github/workflows/ace-review.yml@v1
+    uses: ace-aiagent/ace-assistant/.github/workflows/reusable-review.yml@v1
     with:
       pr_number: ${{ inputs.pr_number }}
       auto_loop: ${{ inputs.auto_loop }}
