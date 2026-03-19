@@ -130,7 +130,7 @@ jobs:
           TRIAGE_JSON="$(jq -c '.triage_json // ""' <<< "$SAFE_ROUTE_PARAMS")"
           FORCE="$(jq -r '.force // "false"' <<< "$SAFE_ROUTE_PARAMS")"
 
-          gh workflow run ace-fix.yml \
+          gh workflow run caller-fix.yml \
             --repo "$REPO" \
             -f target_type="$TARGET_TYPE" \
             -f target_number="$TARGET_NUMBER" \
@@ -200,7 +200,7 @@ jobs:
           EXTRA_PROMPT="$(jq -r '.extra_prompt // ""' <<< "$SAFE_ROUTE_PARAMS")"
           FORCE="$(jq -r '.force // "false"' <<< "$SAFE_ROUTE_PARAMS")"
 
-          gh workflow run ace-review.yml \
+          gh workflow run caller-review.yml \
             --repo "$REPO" \
             -f pr_number="$PR_NUMBER" \
             -f auto_loop="$AUTO_LOOP" \
