@@ -497,7 +497,7 @@ jobs:
           set -euo pipefail; if [[ -f /tmp/pr_meta.json ]]; then meta_file="/tmp/pr_meta.json"; else meta_file="pr_meta.json"; fi; if [[ -f /tmp/pr_comments.json ]]; then comments_file="/tmp/pr_comments.json"; else comments_file="pr_comments.json"; fi; auto_loop_value="$(jq -r '.auto_loop' "$meta_file")"; cp "$meta_file" pr_meta_idle.json
           # Build fix history entry only if fix_result.json exists and has valid content
           if [[ -f fix_result.json ]]; then
-            fix_round="$(jq -r '.fix_round // 1' "$meta_file")"
+            fix_round="$(jq -r '.fix_round // 1' pr_meta_idle.json)"
             fix_summary_text="$(jq -r '.summary // ""' fix_result.json)"
             # NOTE: changed_files is stored with 100 chars for metadata completeness,
             # while _build_history_section() truncates to 50 chars for prompt display readability.
@@ -523,7 +523,7 @@ jobs:
               --set-json lock_owner=null \
               --set-json auto_loop="$( [[ "$auto_loop_value" == "true" ]] && echo true || echo false )" \
               --set-json last_error=null \
-              --set-json fix_history="$(jq -n --argjson entry \"$fix_entry\" --argjson history \"$(jq '.fix_history // []' \"$meta_file\")\" '$history + [$entry] | .[-3:]')"
+              --set-json fix_history="$(jq -n --argjson entry \"$fix_entry\" --argjson history \"$(jq '.fix_history // []' pr_meta_idle.json)\" '$history + [$entry] | .[-3:]')"
           else
             # fix_result.json doesn't exist - skip adding fix history entry
             python -m scripts.ci.update_pr_meta_json \
