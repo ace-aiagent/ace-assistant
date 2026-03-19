@@ -200,7 +200,6 @@ tests/
 ### 前置要求
 
 - Python 3.12+
-- PyYAML（`pip install pyyaml`）
 
 ### 运行测试
 
@@ -211,7 +210,7 @@ PYTHONPATH=. python -m pytest tests/ -v
 
 ### 脚本使用
 
-所有 CI 脚本均为纯标准库 Python（`validate_workflow_structure.py` 除外，需要 PyYAML）。以模块方式调用：
+CI 脚本以模块方式调用：
 
 ```bash
 python -m scripts.ci.build_prompt --help

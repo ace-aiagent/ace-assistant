@@ -103,7 +103,7 @@ jobs:
             --remove-label "ai:not-a-bug" \
             --remove-label "ai:confirmed" \
             --remove-label "ai:needs-human" \
-            --add-label "ai:triaging" || true
+            --add-label "ai:triaging"
 
           gh api "repos/$REPO/issues/$ISSUE_NUMBER" > /tmp/issue.json
 
@@ -128,7 +128,7 @@ jobs:
             reason="$(jq -r '.reason // "N/A"' /tmp/triage_result.json)"
             gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
               --remove-label "ai:triaging" \
-              --add-label "ai:not-a-bug" || true
+              --add-label "ai:not-a-bug"
             printf 'Ace triage result: NOT_A_BUG\n\nReason: %s\n' "$reason" > /tmp/comment_body.md
             gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
             exit 0
@@ -138,7 +138,7 @@ jobs:
             reason="$(jq -r '.reason // "N/A"' /tmp/triage_result.json)"
             gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
               --remove-label "ai:triaging" \
-              --add-label "ai:needs-human" || true
+              --add-label "ai:needs-human"
             printf 'Ace triage result: NEEDS_HUMAN\n\nReason: %s\n' "$reason" > /tmp/comment_body.md
             gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
             exit 0
@@ -147,7 +147,7 @@ jobs:
           if [[ "$verdict" != "CONFIRMED_BUG" ]]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
               --remove-label "ai:triaging" \
-              --add-label "ai:needs-human" || true
+              --add-label "ai:needs-human"
             gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "Unexpected triage verdict: ${verdict}. Please review manually."
             exit 0
           fi
@@ -157,7 +157,7 @@ jobs:
             --remove-label "ai:not-a-bug" \
             --remove-label "ai:needs-human" \
             --add-label "ai:confirmed" \
-            --add-label "ai:fixing" || true
+            --add-label "ai:fixing"
 
           triage_json="$(jq -c '.' /tmp/triage_result.json)"
           echo "triage_json=$triage_json" >> "$GITHUB_OUTPUT"

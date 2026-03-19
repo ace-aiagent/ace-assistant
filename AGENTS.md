@@ -11,9 +11,9 @@
 
 ## 技术栈
 
-- **Python**: 3.12+（CI 脚本使用纯标准库 Python，仅 `validate_workflow_structure.py` 需要 PyYAML）
+- **Python**: 3.12+（CI 脚本使用纯标准库 Python）
 - **GitHub Actions**: workflow_call 可复用工作流、composite actions
-- **PyYAML**: 用于 workflow 结构验证
+- **PyYAML**: 用于 YAML 相关测试
 
 ## 常用命令
 
