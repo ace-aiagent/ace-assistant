@@ -1,4 +1,4 @@
-# Caller workflow for AI Dispatch — place in your repo's .github/workflows/ace-dispatch.yml
+# Self workflow for AI Dispatch — used by ace-assistant repository itself
 # Replace ace-aiagent/ace-assistant with your actual org/repo path for the ace-assistant repository.
 #
 # This caller handles event listening (issues, comments, PRs) and delegates the
@@ -59,7 +59,7 @@ concurrency:
 
 jobs:
   dispatch:
-    uses: ace-aiagent/ace-assistant/.github/workflows/ace-dispatch.yml@v1
+    uses: ace-aiagent/ace-assistant/.github/workflows/reusable-dispatch.yml@v1
     with:
       event_name: ${{ github.event_name }}
       target_type: ${{ inputs.target_type || '' }}
@@ -130,7 +130,7 @@ jobs:
           TRIAGE_JSON="$(jq -c '.triage_json // ""' <<< "$SAFE_ROUTE_PARAMS")"
           FORCE="$(jq -r '.force // "false"' <<< "$SAFE_ROUTE_PARAMS")"
 
-          gh workflow run caller-fix.yml \
+          gh workflow run self-fix.yml \
             --repo "$REPO" \
             -f target_type="$TARGET_TYPE" \
             -f target_number="$TARGET_NUMBER" \
@@ -200,7 +200,7 @@ jobs:
           EXTRA_PROMPT="$(jq -r '.extra_prompt // ""' <<< "$SAFE_ROUTE_PARAMS")"
           FORCE="$(jq -r '.force // "false"' <<< "$SAFE_ROUTE_PARAMS")"
 
-          gh workflow run caller-review.yml \
+          gh workflow run self-review.yml \
             --repo "$REPO" \
             -f pr_number="$PR_NUMBER" \
             -f auto_loop="$AUTO_LOOP" \

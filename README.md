@@ -16,12 +16,12 @@
 
 ```bash
 # 在你的业务仓库根目录执行
-curl -sL https://raw.githubusercontent.com/ORG/ace-assistant/v1/templates/caller-dispatch.yml \
-  -o .github/workflows/ace-dispatch.yml
-curl -sL https://raw.githubusercontent.com/ORG/ace-assistant/v1/templates/caller-fix.yml \
-  -o .github/workflows/ace-fix.yml
-curl -sL https://raw.githubusercontent.com/ORG/ace-assistant/v1/templates/caller-review.yml \
-  -o .github/workflows/ace-review.yml
+curl -sL https://raw.githubusercontent.com/ORG/ace-assistant/v1/templates/dispatch.yml \
+  -o .github/workflows/dispatch.yml
+curl -sL https://raw.githubusercontent.com/ORG/ace-assistant/v1/templates/fix.yml \
+  -o .github/workflows/fix.yml
+curl -sL https://raw.githubusercontent.com/ORG/ace-assistant/v1/templates/review.yml \
+  -o .github/workflows/review.yml
 ```
 
 ### 2. 替换占位符
@@ -30,14 +30,14 @@ curl -sL https://raw.githubusercontent.com/ORG/ace-assistant/v1/templates/caller
 
 ```bash
 sed -i 's|ORG/ace-assistant|your-org/ace-assistant|g' \
-  .github/workflows/ace-dispatch.yml \
-  .github/workflows/ace-fix.yml \
-  .github/workflows/ace-review.yml
+  .github/workflows/dispatch.yml \
+  .github/workflows/fix.yml \
+  .github/workflows/review.yml
 ```
 
 ### 3. 添加配置文件
 
-在你的仓库中创建 `.github/ace-config.json`。完整示例见 `templates/ace-config.example.json`。
+在你的仓库中创建 `.github/ace-config.json`。完整示例见 `templates/config.example.json`。
 
 需要自定义的关键字段：
 
@@ -78,9 +78,9 @@ PAT 需要 `repo` 和 `workflow` 权限，用于调度工作流和管理 PR/Issu
 ┌─────────────────┐                   ┌──────────────────────┐
 │ .github/        │                   │ .github/             │
 │   workflows/    │    workflow_call  │   workflows/         │
-│     ace-dispatch ├──────────────────►│     ace-dispatch.yml  │
-│     ace-fix      ├──────────────────►│     ace-fix.yml       │
-│     ace-review   ├──────────────────►│     ace-review.yml    │
+│     dispatch    ├──────────────────►│     reusable-dispatch.yml  │
+│     fix         ├──────────────────►│     reusable-fix.yml       │
+│     review      ├──────────────────►│     reusable-review.yml    │
 │   ace-config.json                   │   actions/           │
 │                 │                   │     ace-worker-bootstrap/
 └─────────────────┘                   │     setup-opencode/  │
@@ -96,7 +96,7 @@ PAT 需要 `repo` 和 `workflow` 权限，用于调度工作流和管理 PR/Issu
 
 ## 工作流详情
 
-### ace-dispatch（可复用工作流）
+### reusable-dispatch（可复用工作流）
 
 接收序列化的事件数据并执行：
 - **Issue 分诊**：AI 分析 Issue，分类并路由至修复
@@ -106,7 +106,7 @@ PAT 需要 `repo` 和 `workflow` 权限，用于调度工作流和管理 PR/Issu
 
 **输出**：`route_to`（`fix` | `review` | `none`）和 `route_params`（JSON）
 
-### ace-fix（可复用工作流）
+### reusable-fix（可复用工作流）
 
 执行 AI 驱动的代码修复：
 1. 解析 Issue/PR 上下文
@@ -115,7 +115,7 @@ PAT 需要 `repo` 和 `workflow` 权限，用于调度工作流和管理 PR/Issu
 4. 提交变更并创建/更新 PR
 5. 可选：修复完成后自动触发审查
 
-### ace-review（可复用工作流）
+### reusable-review（可复用工作流）
 
 执行 AI 驱动的 PR 审查：
 1. 获取 PR 的 diff 和上下文信息
@@ -131,16 +131,16 @@ Caller Workflow 必须声明以下权限：
 
 | 工作流 | 权限 |
 |--------|------|
-| ace-dispatch | `contents: read`、`issues: write`、`pull-requests: write`、`actions: write` |
-| ace-fix | `contents: write`、`issues: write`、`pull-requests: write`、`actions: write` |
-| ace-review | `contents: read`、`issues: write`、`pull-requests: write`、`actions: write` |
+| dispatch | `contents: read`、`issues: write`、`pull-requests: write`、`actions: write` |
+| fix | `contents: write`、`issues: write`、`pull-requests: write`、`actions: write` |
+| review | `contents: read`、`issues: write`、`pull-requests: write`、`actions: write` |
 
 ## 版本固定
 
 Caller Workflow 应固定到主版本 tag：
 
 ```yaml
-uses: your-org/ace-assistant/.github/workflows/ace-fix.yml@v1
+uses: your-org/ace-assistant/.github/workflows/reusable-fix.yml@v1
 ```
 
 这样 ace-assistant 的非破坏性更新（Bug 修复、功能改进）会自动生效，无需修改 Caller Workflow。
@@ -172,9 +172,9 @@ git push origin v1 --force
 ```
 .github/
   workflows/         # 可复用工作流（workflow_call）
-    ace-dispatch.yml  # Issue 分诊 + 事件路由
-    ace-fix.yml       # AI 代码修复
-    ace-review.yml    # AI PR 审查
+    reusable-dispatch.yml  # Issue 分诊 + 事件路由
+    reusable-fix.yml       # AI 代码修复
+    reusable-review.yml    # AI PR 审查
   actions/           # Composite Actions
     ace-worker-bootstrap/  # 双重 checkout + 环境搭建
     setup-opencode/       # OpenCode 认证配置
@@ -187,10 +187,10 @@ git push origin v1 --force
 scripts/
   ci/                # Python CI 脚本（仅依赖标准库）
 templates/           # Caller Workflow 模板
-  caller-dispatch.yml
-  caller-fix.yml
-  caller-review.yml
-  ace-config.example.json
+  dispatch.yml
+  fix.yml
+  review.yml
+  config.example.json
 tests/
   ci/                # CI 脚本测试套件
 ```
