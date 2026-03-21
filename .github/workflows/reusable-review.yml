@@ -50,6 +50,10 @@ jobs:
       needs_fix: ${{ steps.set_outputs.outputs.needs_fix }}
       fix_params: ${{ steps.set_outputs.outputs.fix_params }}
     steps:
+      - name: Ensure labels
+        uses: ace-aiagent/ace-assistant/.github/actions/ensure-labels@v1
+        with:
+          github-token: ${{ github.token }}
       - name: Bootstrap AI worker
         uses: ace-aiagent/ace-assistant/.github/actions/ace-worker-bootstrap@v1
         with:

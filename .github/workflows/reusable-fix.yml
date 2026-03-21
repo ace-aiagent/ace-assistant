@@ -49,6 +49,10 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}/.ace-assistant
       BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
     steps:
+      - name: Ensure labels
+        uses: ace-aiagent/ace-assistant/.github/actions/ensure-labels@v1
+        with:
+          github-token: ${{ github.token }}
       - name: Bootstrap AI worker
         uses: ace-aiagent/ace-assistant/.github/actions/ace-worker-bootstrap@v1
         with:

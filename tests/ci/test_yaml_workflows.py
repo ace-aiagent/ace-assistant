@@ -308,6 +308,20 @@ class TestYamlWorkflowValidation:
                     f"{step.get('name')} cleanup-files must not include tracked path: {entry}"
                 )
 
+    @pytest.mark.parametrize(
+        ("workflow_name", "job_name"),
+        [("reusable-fix.yml", "fix"), ("reusable-review.yml", "review")],
+    )
+    def test_fix_and_review_workflows_ensure_labels_before_label_operations(
+        self,
+        workflow_name: str,
+        job_name: str,
+    ) -> None:
+        steps = get_job_steps(workflow_name, job_name)
+        ensure_labels_step = get_step_by_name(steps, "Ensure labels")
+
+        assert ensure_labels_step.get("uses") == "ace-aiagent/ace-assistant/.github/actions/ensure-labels@v1"
+
 
 class TestAceReviewWorkflowMetadataPersistence:
     def test_fix_workflow_documents_changed_files_storage_vs_display_limits(self) -> None:
