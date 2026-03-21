@@ -91,7 +91,7 @@ jobs:
           ISSUE_NUMBER: ${{ inputs.target_number }}
         shell: bash
         run: |
-          set -euo pipefail; gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label "ai:needs-human"; printf '⚠️ **Ace Cannot Continue**\n\nThe `Base branch` specified in the issue does not exist. Please correct it and comment `/ace fix`.\n' > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+          set -euo pipefail; gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-label "ace:needs-human"; printf '⚠️ **Ace Cannot Continue**\n\nThe `Base branch` specified in the issue does not exist. Please correct it and comment `/ace fix`.\n' > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
       - name: Mark issue as triaging
         if: inputs.target_type == 'issue' && steps.validate_issue_branch.outputs.valid == 'true'
         env:
@@ -100,7 +100,7 @@ jobs:
           ISSUE_NUMBER: ${{ inputs.target_number }}
         shell: bash
         run: |
-          set -euo pipefail; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ai:not-a-bug"             --remove-label "ai:confirmed"             --remove-label "ai:needs-human"             --add-label "ai:triaging"
+          set -euo pipefail; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ace:not-a-bug"             --remove-label "ace:confirmed"             --remove-label "ace:needs-human"             --add-label "ace:triaging"
       - name: Use provided triage JSON
         if: inputs.target_type == 'issue' && steps.validate_issue_branch.outputs.valid == 'true' && inputs.triage_json != ''
         shell: bash
@@ -150,7 +150,7 @@ jobs:
           ISSUE_NUMBER: ${{ inputs.target_number }}
         shell: bash
         run: |
-          set -euo pipefail; reason="$(jq -r '.reason // "N/A"' triage_result.json)"; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ai:triaging"             --add-label "ai:not-a-bug"; printf '🔍 **Ace Triage Result: NOT_A_BUG**\n\n**Reason:** %s\n' "$reason" > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+          set -euo pipefail; reason="$(jq -r '.reason // "N/A"' triage_result.json)"; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ace:triaging"             --add-label "ace:not-a-bug"; printf '🔍 **Ace Triage Result: NOT_A_BUG**\n\n**Reason:** %s\n' "$reason" > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
       - name: Comment and stop for NEEDS_HUMAN
         if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'NEEDS_HUMAN'
         env:
@@ -159,7 +159,7 @@ jobs:
           ISSUE_NUMBER: ${{ inputs.target_number }}
         shell: bash
         run: |
-          set -euo pipefail; reason="$(jq -r '.reason // "N/A"' triage_result.json)"; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ai:triaging"             --add-label "ai:needs-human"; printf '🤔 **Ace Triage Result: NEEDS_HUMAN**\n\n**Reason:** %s\n' "$reason" > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+          set -euo pipefail; reason="$(jq -r '.reason // "N/A"' triage_result.json)"; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ace:triaging"             --add-label "ace:needs-human"; printf '🤔 **Ace Triage Result: NEEDS_HUMAN**\n\n**Reason:** %s\n' "$reason" > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
       - name: Comment and mark issue as confirmed
         if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG'
         env:
@@ -168,7 +168,7 @@ jobs:
           ISSUE_NUMBER: ${{ inputs.target_number }}
         shell: bash
         run: |
-          set -euo pipefail; reason="$(jq -r '.reason // "N/A"' triage_result.json)"; confidence="$(jq -r '.confidence // "N/A"' triage_result.json)"; fix_strategy="$(jq -r '.fix_strategy // "N/A"' triage_result.json)"; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ai:triaging"             --remove-label "ai:not-a-bug"             --remove-label "ai:needs-human"             --add-label "ai:confirmed"             --add-label "ai:fixing"; printf '✅ **Ace Triage Result: CONFIRMED_BUG**\n\n- **Confidence:** %s\n- **Reason:** %s\n- **Fix Strategy:** %s\n\nProceeding with automatic fix...\n' "$confidence" "$reason" "$fix_strategy" > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+          set -euo pipefail; reason="$(jq -r '.reason // "N/A"' triage_result.json)"; confidence="$(jq -r '.confidence // "N/A"' triage_result.json)"; fix_strategy="$(jq -r '.fix_strategy // "N/A"' triage_result.json)"; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ace:triaging"             --remove-label "ace:not-a-bug"             --remove-label "ace:needs-human"             --add-label "ace:confirmed"             --add-label "ace:fixing"; printf '✅ **Ace Triage Result: CONFIRMED_BUG**\n\n- **Confidence:** %s\n- **Reason:** %s\n- **Fix Strategy:** %s\n\nProceeding with automatic fix...\n' "$confidence" "$reason" "$fix_strategy" > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
       - name: Build issue fix branch name
         if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG'
         id: issue_branch_name
@@ -226,7 +226,7 @@ jobs:
           ISSUE_NUMBER: ${{ inputs.target_number }}
         shell: bash
         run: |
-          set -euo pipefail; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ai:fixing"             --add-label "ai:needs-human"; printf '⚠️ **Ace Fix — No Code Changes**\n\nAce confirmed this is a bug, but no committable code changes were produced this round. Please review manually.\n' > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+          set -euo pipefail; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ace:fixing"             --add-label "ace:needs-human"; printf '⚠️ **Ace Fix — No Code Changes**\n\nAce confirmed this is a bug, but no committable code changes were produced this round. Please review manually.\n' > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
       - name: Build issue commit message
         if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG' && steps.issue_diff_check.outputs.has_changes == 'true'
         env:
@@ -264,7 +264,7 @@ jobs:
           PR_NUMBER: ${{ steps.create_issue_pr.outputs.pr_number }}
         shell: bash
         run: |
-          set -euo pipefail; gh pr edit "$PR_NUMBER" --repo "$REPO"             --add-label "ai:managed"             --add-label "ai:reviewing"
+          set -euo pipefail; gh pr edit "$PR_NUMBER" --repo "$REPO"             --add-label "ace:managed"             --add-label "ace:reviewing"
       - name: Build AI PR metadata (initial)
         if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG' && steps.issue_diff_check.outputs.has_changes == 'true'
         env:
@@ -296,7 +296,7 @@ jobs:
           PR_URL: ${{ steps.create_issue_pr.outputs.pr_url }}
         shell: bash
         run: |
-          set -euo pipefail; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ai:fixing"             --add-label "ai:pr-opened"; printf '🔧 **Ace Created Fix PR**\n\n%s\n' "$PR_URL" > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
+          set -euo pipefail; gh issue edit "$ISSUE_NUMBER" --repo "$REPO"             --remove-label "ace:fixing"             --add-label "ace:pr-opened"; printf '🔧 **Ace Created Fix PR**\n\n%s\n' "$PR_URL" > /tmp/comment_body.md; gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
       - name: Dispatch review for issue PR
         if: inputs.target_type == 'issue' && steps.triage_out.outputs.verdict == 'CONFIRMED_BUG' && steps.issue_diff_check.outputs.has_changes == 'true' && inputs.auto_loop == 'true'
         env:
@@ -370,11 +370,11 @@ jobs:
             --issue-number "$PR_NUMBER"
 
           gh pr edit "$PR_NUMBER" --repo "$REPO" \
-            --remove-label "ai:reviewing" \
-            --remove-label "ai:review-approved" \
-            --remove-label "ai:changes-requested" \
-            --remove-label "ai:loop-exceeded" \
-            --remove-label "ai:needs-human" || true
+            --remove-label "ace:reviewing" \
+            --remove-label "ace:review-approved" \
+            --remove-label "ace:changes-requested" \
+            --remove-label "ace:loop-exceeded" \
+            --remove-label "ace:needs-human" || true
 
           mv pr_meta_force_reset.json pr_meta.json
       - name: Checkout PR head branch
@@ -624,7 +624,7 @@ jobs:
           max_failures="${{ steps.load_error_config.outputs.max_failures }}"
           auto_label="${{ steps.load_error_config.outputs.auto_label }}"
           if [[ "$new_failure_count" -ge "$max_failures" && "$auto_label" == "true" ]]; then
-            gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "ai:needs-human"
+            gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "ace:needs-human"
           fi
 
           python -m scripts.ci.upsert_comment \
