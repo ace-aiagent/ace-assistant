@@ -17,3 +17,8 @@ scripts/create_fragment.data.json
 
 *.trim_meta.json
 *.diagnostics.json
+
+.coverage
+.sisyphus
+
+.ace-assistant
