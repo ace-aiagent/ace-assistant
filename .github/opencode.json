@@ -170,5 +170,12 @@
         }
       }
     }
+  },
+  "mcp": {
+    "deepwiki": {
+      "enabled": true,
+      "type": "remote",
+      "url": "https://mcp.deepwiki.com/mcp"
+    }
   }
 }
