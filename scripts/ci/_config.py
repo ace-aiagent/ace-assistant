@@ -15,10 +15,10 @@ DEFAULT_CONFIG_PATH = ".github/ace-config.json"
 
 @dataclass(frozen=True)
 class TechStackConfig:
-    language: str = "Python 3.12"
-    package_manager: str = "uv"
-    test_command: str = "uv run pytest"
-    type_check_command: str = "uv run basedpyright --level error"
+    language: str = "TypeScript"
+    package_manager: str = "pnpm"
+    test_command: str = "pnpm test"
+    type_check_command: str = "pnpm typecheck"
     runner: str = "ubuntu-latest"
 
 
@@ -150,9 +150,7 @@ def load_ace_config(config_path: str | None = None) -> AceConfig:
         "bot",
         "branch",
         "review",
-        "ci_paths",
         "error_recovery",
-        "workflow_validation",
         "chatops",
     }
     unknown_keys = sorted(set(raw) - known_keys)
@@ -163,22 +161,8 @@ def load_ace_config(config_path: str | None = None) -> AceConfig:
     bot_raw = _ensure_dict(raw.get("bot"))
     branch_raw = _ensure_dict(raw.get("branch"))
     review_raw = _ensure_dict(raw.get("review"))
-    ci_paths_raw = _ensure_dict(raw.get("ci_paths"))
     error_recovery_raw = _ensure_dict(raw.get("error_recovery"))
-    workflow_validation_raw = _ensure_dict(raw.get("workflow_validation"))
     chatops_raw = _ensure_dict(raw.get("chatops"))
-
-    default_required_inputs = dict(defaults.workflow_validation.required_inputs)
-    required_inputs_raw = _ensure_dict(workflow_validation_raw.get("required_inputs"))
-    for workflow, fields in required_inputs_raw.items():
-        if isinstance(workflow, str):
-            default_required_inputs[workflow] = _as_str_list(fields, [])
-
-    default_concurrency = dict(defaults.workflow_validation.expected_concurrency_prefixes)
-    expected_concurrency_raw = _ensure_dict(workflow_validation_raw.get("expected_concurrency_prefixes"))
-    for workflow, prefix in expected_concurrency_raw.items():
-        if isinstance(workflow, str) and isinstance(prefix, str):
-            default_concurrency[workflow] = prefix
 
     return AceConfig(
         tech_stack=TechStackConfig(
@@ -203,8 +187,8 @@ def load_ace_config(config_path: str | None = None) -> AceConfig:
             max_rounds=_as_int(review_raw.get("max_rounds"), defaults.review.max_rounds),
         ),
         ci_paths=CiPathsConfig(
-            scripts=_as_str_list(ci_paths_raw.get("scripts"), defaults.ci_paths.scripts),
-            actions=_as_str_list(ci_paths_raw.get("actions"), defaults.ci_paths.actions),
+            scripts=list(defaults.ci_paths.scripts),
+            actions=list(defaults.ci_paths.actions),
         ),
         error_recovery=ErrorRecoveryConfig(
             max_consecutive_failures=_as_int(
@@ -217,12 +201,9 @@ def load_ace_config(config_path: str | None = None) -> AceConfig:
             ),
         ),
         workflow_validation=WorkflowValidationConfig(
-            required_inputs=default_required_inputs,
-            expected_concurrency_prefixes=default_concurrency,
-            required_markers=_as_str_list(
-                workflow_validation_raw.get("required_markers"),
-                defaults.workflow_validation.required_markers,
-            ),
+            required_inputs=dict(defaults.workflow_validation.required_inputs),
+            expected_concurrency_prefixes=dict(defaults.workflow_validation.expected_concurrency_prefixes),
+            required_markers=list(defaults.workflow_validation.required_markers),
         ),
         chatops=ChatopsConfig(
             command_prefix=_as_str(chatops_raw.get("command_prefix"), defaults.chatops.command_prefix),

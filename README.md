@@ -25,11 +25,11 @@ curl -sL https://raw.githubusercontent.com/ace-aiagent/ace-assistant/v1/template
   -o .github/workflows/review.yml
 ```
 
-### 2. 添加配置文件
+### 2. 添加配置文件 (可选)
 
-在你的仓库中创建 `.github/ace-config.json`。完整示例见 `templates/config.example.json`。
+在你的仓库中创建 `.github/ace-config.json`。
 
-需要自定义的关键字段：
+如果你的仓库使用 typescript, 那么可能不需要这个配置文件。如果使用其他语言, 那么需要配置 `tech_stack` 字段: 
 
 | 字段 | 说明 |
 |------|------|
@@ -37,10 +37,8 @@ curl -sL https://raw.githubusercontent.com/ace-aiagent/ace-assistant/v1/template
 | `tech_stack.package_manager` | 包管理器（npm、uv、cargo 等） |
 | `tech_stack.test_command` | 运行测试的命令 |
 | `tech_stack.type_check_command` | 类型检查命令（可选） |
-| `bot.name` | AI 提交时的 Git 作者名称 |
-| `bot.email` | AI 提交时的 Git 作者邮箱 |
-| `branch.prefix` | AI 创建分支的命名前缀 |
-| `chatops.command_prefix` | ChatOps 命令前缀（默认：`ace`） |
+
+完整示例见 `templates/config.example.json`。
 
 ### 3. 配置 Secrets
 
