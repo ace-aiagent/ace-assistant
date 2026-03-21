@@ -35,52 +35,6 @@ def _full_config_payload() -> dict[str, Any]:
             "prefix": "ace/fix/issue",
             "detection_patterns": ["ace/*", "fix/*", "issue-*"],
         },
-        "labels": {
-            "triaging": {
-                "color": "1D76DB",
-                "description": "Ace is triaging this issue",
-            },
-            "confirmed": {
-                "color": "0E8A16",
-                "description": "Ace confirmed this is a real bug",
-            },
-            "not-a-bug": {
-                "color": "B60205",
-                "description": "Ace thinks this is not a bug",
-            },
-            "needs-human": {
-                "color": "FBCA04",
-                "description": "Ace needs human input or failed to proceed",
-            },
-            "fixing": {
-                "color": "5319E7",
-                "description": "Ace is preparing a fix",
-            },
-            "pr-opened": {
-                "color": "0052CC",
-                "description": "Ace opened a PR for this issue",
-            },
-            "managed": {
-                "color": "5319E7",
-                "description": "PR is managed by Ace loop",
-            },
-            "reviewing": {
-                "color": "1D76DB",
-                "description": "Ace is reviewing the PR",
-            },
-            "changes-requested": {
-                "color": "D93F0B",
-                "description": "Ace review requested changes",
-            },
-            "review-approved": {
-                "color": "0E8A16",
-                "description": "Ace review approved the PR",
-            },
-            "loop-exceeded": {
-                "color": "B60205",
-                "description": "Ace review/fix loop exceeded max rounds",
-            },
-        },
         "review": {"max_rounds": 3},
         "ci_paths": {
             "scripts": ["scripts/ci/*", "scripts/__init__.py", "scripts/ci/__init__.py"],
@@ -117,7 +71,6 @@ def test_load_full_config_success(write_json: Callable[[str, Any], Path]) -> Non
     assert config.tech_stack.runner == "ubuntu-latest"
     assert config.bot.email == "ace-uai[bot]@users.noreply.github.com"
     assert config.branch.detection_patterns == ["ace/*", "fix/*", "issue-*"]
-    assert config.labels["triaging"].color == "1D76DB"
     assert config.workflow_validation.required_markers == ["ace-pr-meta", "ace-review-context"]
 
 
@@ -220,7 +173,6 @@ def test_validate_branch_config_warns_on_prefix_mismatch() -> None:
         tech_stack=load_ace_config(config_path="/path/does/not/exist").tech_stack,
         bot=load_ace_config(config_path="/path/does/not/exist").bot,
         branch=BranchConfig(prefix="feature/work", detection_patterns=["bugfix/*", "hotfix/*"]),
-        labels=load_ace_config(config_path="/path/does/not/exist").labels,
         review=load_ace_config(config_path="/path/does/not/exist").review,
         ci_paths=load_ace_config(config_path="/path/does/not/exist").ci_paths,
         error_recovery=load_ace_config(config_path="/path/does/not/exist").error_recovery,

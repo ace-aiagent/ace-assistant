@@ -14,7 +14,7 @@ inputs:
     description: Maximum allowed consecutive failures
     required: true
   auto-label:
-    description: Whether to add ai:needs-human label at threshold
+    description: Whether to add ace:needs-human label at threshold
     required: true
   pr-number:
     description: Pull request number
@@ -57,7 +57,7 @@ runs:
         if [[ "$FAILURE_COUNT" -ge "$MAX_FAILURES" ]]; then
           echo "can_proceed=false" >> "$GITHUB_OUTPUT"
           if [[ "$AUTO_LABEL" == "true" ]]; then
-            gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "ai:needs-human" || true
+            gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label "ace:needs-human" || true
           fi
           gh issue comment "$PR_NUMBER" --repo "$REPO" --body "$COMMENT_BODY"
         else

@@ -35,12 +35,6 @@ class BranchConfig:
 
 
 @dataclass(frozen=True)
-class LabelInfo:
-    color: str
-    description: str
-
-
-@dataclass(frozen=True)
 class ReviewConfig:
     max_rounds: int = 3
 
@@ -87,7 +81,6 @@ class AceConfig:
     tech_stack: TechStackConfig
     bot: BotConfig
     branch: BranchConfig
-    labels: dict[str, LabelInfo]
     review: ReviewConfig
     ci_paths: CiPathsConfig
     error_recovery: ErrorRecoveryConfig
@@ -95,28 +88,11 @@ class AceConfig:
     chatops: ChatopsConfig
 
 
-def _default_labels() -> dict[str, LabelInfo]:
-    return {
-        "triaging": LabelInfo(color="1D76DB", description="Ace is triaging this issue"),
-        "confirmed": LabelInfo(color="0E8A16", description="Ace confirmed this is a real bug"),
-        "not-a-bug": LabelInfo(color="B60205", description="Ace thinks this is not a bug"),
-        "needs-human": LabelInfo(color="FBCA04", description="Ace needs human input or failed to proceed"),
-        "fixing": LabelInfo(color="5319E7", description="Ace is preparing a fix"),
-        "pr-opened": LabelInfo(color="0052CC", description="Ace opened a PR for this issue"),
-        "managed": LabelInfo(color="5319E7", description="PR is managed by Ace loop"),
-        "reviewing": LabelInfo(color="1D76DB", description="Ace is reviewing the PR"),
-        "changes-requested": LabelInfo(color="D93F0B", description="Ace review requested changes"),
-        "review-approved": LabelInfo(color="0E8A16", description="Ace review approved the PR"),
-        "loop-exceeded": LabelInfo(color="B60205", description="Ace review/fix loop exceeded max rounds"),
-    }
-
-
 def _default_config() -> AceConfig:
     return AceConfig(
         tech_stack=TechStackConfig(),
         bot=BotConfig(),
         branch=BranchConfig(),
-        labels=_default_labels(),
         review=ReviewConfig(),
         ci_paths=CiPathsConfig(),
         error_recovery=ErrorRecoveryConfig(),
@@ -173,7 +149,6 @@ def load_ace_config(config_path: str | None = None) -> AceConfig:
         "tech_stack",
         "bot",
         "branch",
-        "labels",
         "review",
         "ci_paths",
         "error_recovery",
@@ -187,23 +162,11 @@ def load_ace_config(config_path: str | None = None) -> AceConfig:
     tech_stack_raw = _ensure_dict(raw.get("tech_stack"))
     bot_raw = _ensure_dict(raw.get("bot"))
     branch_raw = _ensure_dict(raw.get("branch"))
-    labels_raw = _ensure_dict(raw.get("labels"))
     review_raw = _ensure_dict(raw.get("review"))
     ci_paths_raw = _ensure_dict(raw.get("ci_paths"))
     error_recovery_raw = _ensure_dict(raw.get("error_recovery"))
     workflow_validation_raw = _ensure_dict(raw.get("workflow_validation"))
     chatops_raw = _ensure_dict(raw.get("chatops"))
-
-    merged_labels = dict(defaults.labels)
-    for label_name, label_value in labels_raw.items():
-        if not isinstance(label_name, str):
-            continue
-        label_dict = _ensure_dict(label_value)
-        existing = merged_labels.get(label_name)
-        merged_labels[label_name] = LabelInfo(
-            color=_as_str(label_dict.get("color"), existing.color if existing else ""),
-            description=_as_str(label_dict.get("description"), existing.description if existing else ""),
-        )
 
     default_required_inputs = dict(defaults.workflow_validation.required_inputs)
     required_inputs_raw = _ensure_dict(workflow_validation_raw.get("required_inputs"))
@@ -236,7 +199,6 @@ def load_ace_config(config_path: str | None = None) -> AceConfig:
             prefix=_as_str(branch_raw.get("prefix"), defaults.branch.prefix),
             detection_patterns=_as_str_list(branch_raw.get("detection_patterns"), defaults.branch.detection_patterns),
         ),
-        labels=merged_labels,
         review=ReviewConfig(
             max_rounds=_as_int(review_raw.get("max_rounds"), defaults.review.max_rounds),
         ),

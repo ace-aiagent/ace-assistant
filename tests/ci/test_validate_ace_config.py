@@ -26,9 +26,6 @@ class TestValidateAceConfigBasic:
                 "prefix": "ace/fix/issue",
                 "detection_patterns": ["ace/*", "fix/*", "issue-*"],
             },
-            "labels": {
-                "test": {"color": "FFFFFF", "description": "test label"}
-            },
         }
         config_path = write_json("config.json", valid_config)
         result = main(str(config_path))
@@ -166,11 +163,8 @@ class TestBranchConsistencyValidation:
         assert result == 1
 
 
-class TestLabelKeyValidation:
-    """Test labels key format validation."""
-
-    def test_label_with_space_returns_one(self, write_json):
-        """Label key with space should exit 1."""
+class TestRemovedLabelsCustomization:
+    def test_labels_field_is_treated_as_unknown_and_returns_zero(self, write_json, capsys):
         config = {
             "tech_stack": {
                 "language": "Python",
@@ -185,7 +179,9 @@ class TestLabelKeyValidation:
         }
         config_path = write_json("config.json", config)
         result = main(str(config_path))
-        assert result == 1
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "warning" in captured.out.lower() or "警告" in captured.out
 
 
 class TestUnknownFieldsWarning:

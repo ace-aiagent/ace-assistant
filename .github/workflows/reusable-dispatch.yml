@@ -99,17 +99,17 @@ jobs:
           echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
 
           labels="$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/labels" --jq '.[].name' || true)"
-          if echo "$labels" | grep -qE 'ai:triaging|ai:fixing|ai:pr-opened'; then
+          if echo "$labels" | grep -qE 'ace:triaging|ace:fixing|ace:pr-opened'; then
             echo "::notice::Issue #$ISSUE_NUMBER already being processed, skipping"
             echo "verdict=SKIP" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
-            --remove-label "ai:not-a-bug" \
-            --remove-label "ai:confirmed" \
-            --remove-label "ai:needs-human" \
-            --add-label "ai:triaging"
+            --remove-label "ace:not-a-bug" \
+            --remove-label "ace:confirmed" \
+            --remove-label "ace:needs-human" \
+            --add-label "ace:triaging"
 
           gh api "repos/$REPO/issues/$ISSUE_NUMBER" > /tmp/issue.json
 
@@ -133,8 +133,8 @@ jobs:
           if [[ "$verdict" == "NOT_A_BUG" ]]; then
             reason="$(jq -r '.reason // "N/A"' /tmp/triage_result.json)"
             gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
-              --remove-label "ai:triaging" \
-              --add-label "ai:not-a-bug"
+              --remove-label "ace:triaging" \
+              --add-label "ace:not-a-bug"
             printf 'Ace triage result: NOT_A_BUG\n\nReason: %s\n' "$reason" > /tmp/comment_body.md
             gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
             exit 0
@@ -143,8 +143,8 @@ jobs:
           if [[ "$verdict" == "NEEDS_HUMAN" ]]; then
             reason="$(jq -r '.reason // "N/A"' /tmp/triage_result.json)"
             gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
-              --remove-label "ai:triaging" \
-              --add-label "ai:needs-human"
+              --remove-label "ace:triaging" \
+              --add-label "ace:needs-human"
             printf 'Ace triage result: NEEDS_HUMAN\n\nReason: %s\n' "$reason" > /tmp/comment_body.md
             gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body-file /tmp/comment_body.md
             exit 0
@@ -152,18 +152,18 @@ jobs:
 
           if [[ "$verdict" != "CONFIRMED_BUG" ]]; then
             gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
-              --remove-label "ai:triaging" \
-              --add-label "ai:needs-human"
+              --remove-label "ace:triaging" \
+              --add-label "ace:needs-human"
             gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "Unexpected triage verdict: ${verdict}. Please review manually."
             exit 0
           fi
 
           gh issue edit "$ISSUE_NUMBER" --repo "$REPO" \
-            --remove-label "ai:triaging" \
-            --remove-label "ai:not-a-bug" \
-            --remove-label "ai:needs-human" \
-            --add-label "ai:confirmed" \
-            --add-label "ai:fixing"
+            --remove-label "ace:triaging" \
+            --remove-label "ace:not-a-bug" \
+            --remove-label "ace:needs-human" \
+            --add-label "ace:confirmed" \
+            --add-label "ace:fixing"
 
           triage_json="$(jq -c '.' /tmp/triage_result.json)"
           echo "triage_json=$triage_json" >> "$GITHUB_OUTPUT"
@@ -284,9 +284,9 @@ jobs:
 
           if [[ "$IS_PR" != "true" && "$command" == "fix" ]]; then
             labels="$(gh api "repos/$REPO/issues/$ISSUE_NUMBER/labels" --jq '.[].name' || true)"
-            if echo "$labels" | grep -qx 'ai:fixing'; then
+            if echo "$labels" | grep -qx 'ace:fixing'; then
               if [[ "$force" == "true" ]]; then
-                gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --remove-label "ai:fixing" || true
+                gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --remove-label "ace:fixing" || true
               else
                 gh api "/repos/$REPO/issues/comments/$COMMENT_ID/reactions" -X POST -f content='-1' || true
                 gh issue comment "$ISSUE_NUMBER" --repo "$REPO" --body "Fix operation is already in progress."
@@ -342,7 +342,7 @@ jobs:
 
   # ─── Job: PR Event Dispatch ─────────────────────────────────────────
   # event_name == 'pull_request'
-  # Behavior: check branch prefix or ai:managed label → output route to review
+  # Behavior: check branch prefix or ace:managed label → output route to review
   dispatch-pr-review:
     if: inputs.event_name == 'pull_request'
     needs: ensure-labels
@@ -395,7 +395,7 @@ jobs:
             fi
           done
 
-          if echo "$labels" | grep -qx 'ai:managed'; then
+          if echo "$labels" | grep -qx 'ace:managed'; then
             should_dispatch="true"
           fi
 
