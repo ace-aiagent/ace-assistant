@@ -1,9 +1,9 @@
 {
   "tech_stack": {
-    "language": "Python 3.12",
-    "package_manager": "uv",
-    "test_command": "uv run pytest",
-    "type_check_command": "uv run basedpyright --level error",
+    "language": "TypeScript",
+    "package_manager": "pnpm",
+    "test_command": "pnpm test",
+    "type_check_command": "pnpm typecheck",
     "runner": "ubuntu-latest"
   },
   "bot": {

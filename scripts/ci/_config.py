@@ -15,10 +15,10 @@ DEFAULT_CONFIG_PATH = ".github/ace-config.json"
 
 @dataclass(frozen=True)
 class TechStackConfig:
-    language: str = "Python 3.12"
-    package_manager: str = "uv"
-    test_command: str = "uv run pytest"
-    type_check_command: str = "uv run basedpyright --level error"
+    language: str = "TypeScript"
+    package_manager: str = "pnpm"
+    test_command: str = "pnpm test"
+    type_check_command: str = "pnpm typecheck"
     runner: str = "ubuntu-latest"
 
 

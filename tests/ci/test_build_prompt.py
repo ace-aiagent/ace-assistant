@@ -245,7 +245,7 @@ def test_build_prompt_keeps_json_schema_braces_literal(
 
 _REQUIRED_SECTIONS = [
     "Environment:",
-    "uv package manager",
+    "pnpm package manager",
     "AI_RESULT_BEGIN",
     "AI_RESULT_END",
     "CRITICAL",
@@ -259,7 +259,7 @@ _CI_PREAMBLE_MARKERS = [
 
 _DEFAULT_ENVIRONMENT_BLOCK = (
     "Environment:\n"
-    "          - Python 3.12, uv package manager (run tests with: uv run pytest)\n"
+    "          - TypeScript, pnpm package manager (run tests with: pnpm test)\n"
     "          - GitHub Actions ubuntu-latest runner\n"
     "          - jq, git, gh CLI available\n"
     "          - Do NOT install additional tools"
@@ -354,7 +354,7 @@ def test_triage_prompt_supports_custom_config_environment(
     text = output.read_text(encoding="utf-8")
     assert "- Node.js 22, npm package manager (run tests with: npm test)" in text
     assert "- GitHub Actions ubuntu-24.04 runner" in text
-    assert "uv package manager" not in text
+    assert "pnpm package manager" not in text
 
 
 def test_fix_prompt_issue_contains_environment_and_markers(

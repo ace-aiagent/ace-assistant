@@ -21,10 +21,10 @@ from scripts.ci._config import (
 def _full_config_payload() -> dict[str, Any]:
     return {
         "tech_stack": {
-            "language": "Python 3.12",
-            "package_manager": "uv",
-            "test_command": "uv run pytest",
-            "type_check_command": "uv run basedpyright --level error",
+            "language": "TypeScript",
+            "package_manager": "pnpm",
+            "test_command": "pnpm test",
+            "type_check_command": "pnpm typecheck",
             "runner": "ubuntu-latest",
         },
         "bot": {
@@ -127,7 +127,7 @@ def test_unknown_top_level_fields_emit_warning(write_json: Callable[[str, Any], 
     with caplog.at_level("WARNING"):
         config = load_ace_config(str(config_file))
 
-    assert config.tech_stack.language == "Python 3.12"
+    assert config.tech_stack.language == "TypeScript"
     assert "Unknown ace config fields" in caplog.text
     assert "future_field" in caplog.text
 
@@ -183,7 +183,7 @@ def test_get_environment_block_format(write_json: Callable[[str, Any], Path]) ->
 
     expected = (
         "Environment:\n"
-        "- Python 3.12, uv package manager (run tests with: uv run pytest)\n"
+        "- TypeScript, pnpm package manager (run tests with: pnpm test)\n"
         "- GitHub Actions ubuntu-latest runner\n"
         "- jq, git, gh CLI available\n"
         "- Do NOT install additional tools"
