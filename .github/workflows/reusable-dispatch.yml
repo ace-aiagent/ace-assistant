@@ -79,6 +79,9 @@ jobs:
         with:
           opencode-auth-b64: ${{ secrets.OPENCODE_AUTH_JSON_B64 }}
 
+      - name: Download shared OpenCode config
+        uses: ./.ace-assistant/.github/actions/download-opencode-config
+
       - name: Handle issue event
         id: triage
         env:
