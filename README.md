@@ -7,6 +7,7 @@
 - **AI 调度（Dispatch）** — 监听 Issue、评论和 PR 事件，通过 AI 进行分诊，路由至修复或审查
 - **AI 修复（Fix）** — 自动创建分支，使用 AI 生成修复代码，提交并创建 PR
 - **AI 审查（Review）** — AI 审查 PR，批准或提出修改建议，支持自动循环（审查 → 修复 → 再审查）
+- `.github/opencode.json` 和 `.opencode/oh-my-openagent.json` 是对外及对内共享的配置文件，用于配置 AI 代理的模型和参数，避免在每个仓库中重复配置
 
 ## 快速开始
 
