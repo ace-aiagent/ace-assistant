@@ -5,14 +5,12 @@
 2. tech_stack 字段完整（5 个子字段非空）
 3. branch.prefix 不含非法 git 字符
 4. branch.detection_patterns 与 prefix 一致性
-5. labels 键值格式正确
-6. 未知的顶层字段（警告而非错误）
+5. 未知的顶层字段（警告而非错误）
 """
 
 from __future__ import annotations
 
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -58,29 +56,12 @@ def check_branch_consistency(config, errors: list[str]) -> None:
         errors.append(f"[BRANCH_CONSISTENCY] {warning}")
 
 
-def check_label_keys(config, errors: list[str]) -> None:
-    """验证 labels 键只能包含 [a-zA-Z0-9_-]。"""
-    labels = config.labels
-    if not isinstance(labels, dict):
-        errors.append(f"[LABELS] labels 必须是字典，实际值：{type(labels).__name__}")
-        return
-
-    # 允许的字符：字母、数字、下划线、连字符
-    allowed_pattern = re.compile(r"^[a-zA-Z0-9_-]+$")
-    for key in labels.keys():
-        if not isinstance(key, str):
-            errors.append(f"[LABELS] label 键必须是字符串，实际值：{repr(key)}")
-        elif not allowed_pattern.match(key):
-            errors.append(f"[LABELS] label 键 '{key}' 包含非法字符，只能用 [a-zA-Z0-9_-]")
-
-
 def check_unknown_fields(raw_data: dict[str, object], warnings: list[str]) -> None:
     """检测未知的顶层字段（警告而非错误）。"""
     known = {
         "tech_stack",
         "bot",
         "branch",
-        "labels",
         "review",
         "ci_paths",
         "error_recovery",
@@ -136,7 +117,6 @@ def main(config_path: str | None = None) -> int:
         check_tech_stack(config, errors)
         check_branch_prefix(config, errors)
         check_branch_consistency(config, errors)
-        check_label_keys(config, errors)
 
     # 4. 输出结果
     if errors:

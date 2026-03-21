@@ -101,4 +101,4 @@ class TestAceConfigExampleJson:
         assert "tech_stack" in data
         assert "bot" in data
         assert "branch" in data
-        assert "labels" in data
+        assert "labels" not in data
