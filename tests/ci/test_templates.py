@@ -32,9 +32,9 @@ class TestTemplateYamlValidation:
     @pytest.mark.parametrize(
         ("workflow_name", "expected_use"),
         [
-        ("dispatch.yml", "ORG/ace-assistant/.github/workflows/reusable-dispatch.yml@v1"),
-        ("fix.yml", "ORG/ace-assistant/.github/workflows/reusable-fix.yml@v1"),
-        ("review.yml", "ORG/ace-assistant/.github/workflows/reusable-review.yml@v1"),
+        ("dispatch.yml", "ace-aiagent/ace-assistant/.github/workflows/reusable-dispatch.yml@v1"),
+        ("fix.yml", "ace-aiagent/ace-assistant/.github/workflows/reusable-fix.yml@v1"),
+        ("review.yml", "ace-aiagent/ace-assistant/.github/workflows/reusable-review.yml@v1"),
         ],
     )
     def test_template_workflow_keeps_reusable_workflow_reference(

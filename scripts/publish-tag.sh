@@ -140,9 +140,9 @@ main() {
     echo "✅ 发布成功!"
     echo ""
     echo "用户现在可以通过以下方式引用:"
-    echo "  uses: your-org/ace-assistant/.github/workflows/ace-fix.yml@v${major_version}"
+    echo "  uses: ace-aiagent/ace-assistant/.github/workflows/ace-fix.yml@v${major_version}"
     echo "  或固定到具体版本:"
-    echo "  uses: your-org/ace-assistant/.github/workflows/ace-fix.yml@v${new_version}"
+    echo "  uses: ace-aiagent/ace-assistant/.github/workflows/ace-fix.yml@v${new_version}"
 }
 
 # 显示帮助

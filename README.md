@@ -17,26 +17,15 @@
 
 ```bash
 # 在你的业务仓库根目录执行
-curl -sL https://raw.githubusercontent.com/ORG/ace-assistant/v1/templates/dispatch.yml \
+curl -sL https://raw.githubusercontent.com/ace-aiagent/ace-assistant/v1/templates/dispatch.yml \
   -o .github/workflows/dispatch.yml
-curl -sL https://raw.githubusercontent.com/ORG/ace-assistant/v1/templates/fix.yml \
+curl -sL https://raw.githubusercontent.com/ace-aiagent/ace-assistant/v1/templates/fix.yml \
   -o .github/workflows/fix.yml
-curl -sL https://raw.githubusercontent.com/ORG/ace-assistant/v1/templates/review.yml \
+curl -sL https://raw.githubusercontent.com/ace-aiagent/ace-assistant/v1/templates/review.yml \
   -o .github/workflows/review.yml
 ```
 
-### 2. 替换占位符
-
-将 3 个 workflow 文件中的 `ORG/ace-assistant` 替换为实际的组织/仓库路径：
-
-```bash
-sed -i 's|ORG/ace-assistant|your-org/ace-assistant|g' \
-  .github/workflows/dispatch.yml \
-  .github/workflows/fix.yml \
-  .github/workflows/review.yml
-```
-
-### 3. 添加配置文件
+### 2. 添加配置文件
 
 在你的仓库中创建 `.github/ace-config.json`。完整示例见 `templates/config.example.json`。
 
@@ -53,7 +42,7 @@ sed -i 's|ORG/ace-assistant|your-org/ace-assistant|g' \
 | `branch.prefix` | AI 创建分支的命名前缀 |
 | `chatops.command_prefix` | ChatOps 命令前缀（默认：`ace`） |
 
-### 4. 配置 Secrets
+### 3. 配置 Secrets
 
 在你的仓库中添加以下 Secrets（Settings → Secrets and variables → Actions）：
 
@@ -61,10 +50,11 @@ sed -i 's|ORG/ace-assistant|your-org/ace-assistant|g' \
 |--------|------|----------|
 | `OPENCODE_AUTH_JSON_B64` | Base64 编码的 OpenCode 认证 JSON | 是 |
 | `GH_PAT` | 具有 `repo` + `workflow` 权限的 GitHub Personal Access Token | 是 |
+| `BAILIAN_API_KEY` | 阿里百炼 API Key | 否 |
 
 PAT 需要 `repo` 和 `workflow` 权限，用于调度工作流和管理 PR/Issue。
 
-### 5.（可选）添加 Issue 模板
+### 4. 添加 Issue 模板
 
 创建 `.github/ISSUE_TEMPLATE/bug-report.yml`，包含以下表单字段供 AI 解析：
 
@@ -141,7 +131,7 @@ Caller Workflow 必须声明以下权限：
 Caller Workflow 应固定到主版本 tag：
 
 ```yaml
-uses: your-org/ace-assistant/.github/workflows/reusable-fix.yml@v1
+uses: ace-aiagent/ace-assistant/.github/workflows/reusable-fix.yml@v1
 ```
 
 这样 ace-assistant 的非破坏性更新（Bug 修复、功能改进）会自动生效，无需修改 Caller Workflow。
