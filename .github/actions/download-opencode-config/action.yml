@@ -1,0 +1,17 @@
+name: Download OpenCode Config
+description: Download shared opencode.json and export OPENCODE_CONFIG
+
+runs:
+  using: composite
+  steps:
+    - name: Download shared opencode.json
+      shell: bash
+      env:
+        OPENCODE_CONFIG_URL: https://raw.githubusercontent.com/ace-aiagent/ace-assistant/v1/.github/opencode.json
+        OPENCODE_CONFIG_PATH: /tmp/opencode.json
+      run: |
+        set -euo pipefail
+        curl -fL --retry 3 --retry-delay 2 --retry-connrefused "$OPENCODE_CONFIG_URL" -o "$OPENCODE_CONFIG_PATH"
+        test -s "$OPENCODE_CONFIG_PATH"
+        python -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$OPENCODE_CONFIG_PATH"
+        echo "OPENCODE_CONFIG=$OPENCODE_CONFIG_PATH" >> "$GITHUB_ENV"
