@@ -398,8 +398,8 @@ class TestAceReviewWorkflowMetadataPersistence:
             "steps.review_outcome.outputs.decision == 'CHANGES_REQUESTED'" in content
         )
         assert 'GH_TOKEN: ${{ github.token }}' in content
-        assert '--remove-label "ai:reviewing"' in content
-        assert '--add-label "ai:changes-requested"' in content
+        assert '--remove-label "ace:reviewing"' in content
+        assert '--add-label "ace:changes-requested"' in content
 
     def test_review_workflow_submit_approval_uses_rest_api_with_pat_token(
         self,
@@ -416,7 +416,7 @@ class TestAceReviewWorkflowMetadataPersistence:
         assert "gh api \"repos/$REPO/pulls/$PR_NUMBER/reviews\" --method POST" in run_script
         assert "-F body=@review_summary.md" in run_script
         assert "gh api \"repos/$REPO/issues/$PR_NUMBER/labels\" --method POST" in run_script
-        assert "labels[]=ai:review-approved" in run_script
+        assert "labels[]=ace:review-approved" in run_script
         assert "gh pr review" not in run_script
         assert "gh pr edit" not in run_script
 
@@ -519,18 +519,18 @@ class TestCriticalLabelTransitionsFailFast:
         run_script = step.get("run")
 
         assert isinstance(run_script, str)
-        assert '--add-label "ai:triaging"' in run_script
-        assert '--add-label "ai:not-a-bug"' in run_script
-        assert '--add-label "ai:needs-human"' in run_script
-        assert '--add-label "ai:confirmed"' in run_script
-        assert '--add-label "ai:fixing"' in run_script
+        assert '--add-label "ace:triaging"' in run_script
+        assert '--add-label "ace:not-a-bug"' in run_script
+        assert '--add-label "ace:needs-human"' in run_script
+        assert '--add-label "ace:confirmed"' in run_script
+        assert '--add-label "ace:fixing"' in run_script
 
         critical_labels = [
-            "ai:triaging",
-            "ai:not-a-bug",
-            "ai:needs-human",
-            "ai:confirmed",
-            "ai:fixing",
+            "ace:triaging",
+            "ace:not-a-bug",
+            "ace:needs-human",
+            "ace:confirmed",
+            "ace:fixing",
         ]
         for label in critical_labels:
             assert not re.search(rf'--add-label "{label}"\s*\|\|\s*true', run_script), (
@@ -540,13 +540,13 @@ class TestCriticalLabelTransitionsFailFast:
     def test_fix_issue_critical_labels_do_not_swallow_failures(self) -> None:
         steps = get_job_steps("reusable-fix.yml", "fix")
         cases = [
-            ("Comment if base branch is invalid", ["ai:needs-human"]),
-            ("Mark issue as triaging", ["ai:triaging"]),
-            ("Comment and stop for NOT_A_BUG", ["ai:not-a-bug"]),
-            ("Comment and stop for NEEDS_HUMAN", ["ai:needs-human"]),
-            ("Comment and mark issue as confirmed", ["ai:confirmed", "ai:fixing"]),
-            ("Comment and stop if no issue fix changes", ["ai:needs-human"]),
-            ("Add issue PR labels", ["ai:reviewing"]),
+            ("Comment if base branch is invalid", ["ace:needs-human"]),
+            ("Mark issue as triaging", ["ace:triaging"]),
+            ("Comment and stop for NOT_A_BUG", ["ace:not-a-bug"]),
+            ("Comment and stop for NEEDS_HUMAN", ["ace:needs-human"]),
+            ("Comment and mark issue as confirmed", ["ace:confirmed", "ace:fixing"]),
+            ("Comment and stop if no issue fix changes", ["ace:needs-human"]),
+            ("Add issue PR labels", ["ace:reviewing"]),
         ]
 
         for step_name, labels in cases:
@@ -563,10 +563,10 @@ class TestCriticalLabelTransitionsFailFast:
     def test_review_critical_labels_do_not_swallow_failures(self) -> None:
         steps = get_job_steps("reusable-review.yml", "review")
         cases = [
-            ("Mark reviewing labels", ["ai:reviewing"]),
-            ("Submit approval and finalize meta", ["ai:review-approved"]),
-            ("Update labels after changes requested", ["ai:changes-requested"]),
-            ("Mark loop exceeded and finalize meta", ["ai:loop-exceeded"]),
+            ("Mark reviewing labels", ["ace:reviewing"]),
+            ("Submit approval and finalize meta", ["ace:review-approved"]),
+            ("Update labels after changes requested", ["ace:changes-requested"]),
+            ("Mark loop exceeded and finalize meta", ["ace:loop-exceeded"]),
         ]
 
         for step_name, labels in cases:
