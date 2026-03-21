@@ -132,6 +132,51 @@ def test_unknown_top_level_fields_emit_warning(write_json: Callable[[str, Any], 
     assert "future_field" in caplog.text
 
 
+def test_ci_paths_and_workflow_validation_cannot_be_overridden(
+    write_json: Callable[[str, Any], Path],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    config_file = write_json(
+        "ace-config.json",
+        {
+            "tech_stack": {
+                "language": "Python 3.12",
+                "package_manager": "uv",
+                "test_command": "uv run pytest",
+                "type_check_command": "uv run basedpyright --level error",
+                "runner": "ubuntu-latest",
+            },
+            "ci_paths": {
+                "scripts": ["custom/scripts/*"],
+                "actions": ["custom/actions/*"],
+            },
+            "workflow_validation": {
+                "required_inputs": {"reusable-fix.yml": ["force"]},
+                "expected_concurrency_prefixes": {"reusable-fix.yml": "custom-fix-"},
+                "required_markers": ["custom-marker"],
+            },
+        },
+    )
+
+    with caplog.at_level("WARNING"):
+        config = load_ace_config(str(config_file))
+
+    assert config.ci_paths.scripts == ["scripts/ci/*", "scripts/__init__.py", "scripts/ci/__init__.py"]
+    assert config.ci_paths.actions == [".github/actions/*"]
+    assert config.workflow_validation.required_inputs["reusable-fix.yml"] == [
+        "target_type",
+        "target_number",
+        "auto_loop",
+        "extra_prompt",
+        "triage_json",
+    ]
+    assert config.workflow_validation.expected_concurrency_prefixes["reusable-fix.yml"] == "ace-fix-"
+    assert config.workflow_validation.required_markers == ["ace-pr-meta", "ace-review-context"]
+    assert "Unknown ace config fields" in caplog.text
+    assert "ci_paths" in caplog.text
+    assert "workflow_validation" in caplog.text
+
+
 def test_get_environment_block_format(write_json: Callable[[str, Any], Path]) -> None:
     config_file = write_json("ace-config.json", _full_config_payload())
     config = load_ace_config(str(config_file))
