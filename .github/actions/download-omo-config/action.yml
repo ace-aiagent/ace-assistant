@@ -1,0 +1,20 @@
+name: Download Oh My OpenAgent Config
+description: Download shared oh-my-openagent.json and export OPENCODE_CONFIG_DIR
+
+runs:
+  using: composite
+  steps:
+    - name: Download shared oh-my-openagent.json
+      shell: bash
+      env:
+        OH_MY_OPENAGENT_URL: https://raw.githubusercontent.com/ace-aiagent/ace-assistant/v1/.opencode/oh-my-openagent.json
+        OPENCODE_CONFIG_DIR_PATH: /tmp/opencode-config-dir
+      run: |
+        set -euo pipefail
+        TARGET_DIR="$OPENCODE_CONFIG_DIR_PATH"
+        TARGET_FILE="$TARGET_DIR/oh-my-openagent.json"
+        mkdir -p "$TARGET_DIR"
+        curl -fL --retry 3 --retry-delay 2 --retry-connrefused "$OH_MY_OPENAGENT_URL" -o "$TARGET_FILE"
+        test -s "$TARGET_FILE"
+        python -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$TARGET_FILE"
+        echo "OPENCODE_CONFIG_DIR=$TARGET_DIR" >> "$GITHUB_ENV"

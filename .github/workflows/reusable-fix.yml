@@ -55,6 +55,10 @@ jobs:
           opencode-auth-b64: ${{ secrets.OPENCODE_AUTH_JSON_B64 }}
       - name: Download shared OpenCode config
         uses: ./.ace-assistant/.github/actions/download-opencode-config
+
+      - name: Download shared oh-my-openagent config
+        uses: ./.ace-assistant/.github/actions/download-omo-config
+
       - name: Fetch issue JSON
         if: inputs.target_type == 'issue'
         env:

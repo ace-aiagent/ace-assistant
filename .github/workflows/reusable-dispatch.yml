@@ -82,6 +82,9 @@ jobs:
       - name: Download shared OpenCode config
         uses: ./.ace-assistant/.github/actions/download-opencode-config
 
+      - name: Download shared oh-my-openagent config
+        uses: ./.ace-assistant/.github/actions/download-omo-config
+
       - name: Handle issue event
         id: triage
         env:
