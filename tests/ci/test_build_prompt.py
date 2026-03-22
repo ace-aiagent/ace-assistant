@@ -177,6 +177,48 @@ def test_build_prompt_review_writes_output(
     assert "PR number: 9" in text
 
 
+def test_review_prompt_enforces_test_quality_and_anti_gaming_rules(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    write_json,
+    set_ci_env,
+) -> None:
+    pr_file = write_json(
+        "pr.json",
+        {
+            "title": "PR",
+            "body": "Body",
+            "base": {"ref": "main"},
+            "head": {"ref": "fix"},
+        },
+    )
+    meta_file = write_json("meta.json", {"fix_round": 1})
+    output = tmp_path / "review_prompt.md"
+
+    set_ci_env(PR_NUMBER="9", REPO_NAME="org/repo", EXTRA_PROMPT="")
+    _run_main(
+        monkeypatch,
+        [
+            "--mode",
+            "review",
+            "--pr-file",
+            str(pr_file),
+            "--pr-meta-file",
+            str(meta_file),
+            "--output",
+            str(output),
+        ],
+    )
+
+    text = output.read_text(encoding="utf-8")
+    assert "happy path" in text
+    assert "error path" in text
+    assert "edge cases" in text
+    assert "regression path" in text
+    assert "test-gaming" in text
+    assert "hard-coded branches for test inputs" in text
+
+
 def test_build_prompt_raises_when_required_file_args_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     output = tmp_path / "triage_prompt.md"
     monkeypatch.setattr(
