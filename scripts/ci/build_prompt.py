@@ -416,7 +416,12 @@ def _build_review_prompt(
 
           Task:
           - Review the current checked out PR branch against its base branch.
-          - Focus on correctness, regressions, edge cases, missing tests, and maintainability.
+          - Focus on correctness, regressions, test quality, edge cases, and maintainability.
+          - Treat test quality as a blocking gate.
+          - Ensure tests cover happy path, error path, edge cases, and regression path.
+          - Verify assertions prove observable behavior, not only internal calls or line coverage.
+          - Detect and block test-gaming patterns: hard-coded branches for test inputs, test-only bypass logic, swallowed exceptions, weakened contracts, or tests changed only to hide defects.
+          - If key behavior changes are not backed by adequate tests, decision MUST be CHANGES_REQUESTED.
           - Do NOT modify files.
           - Be strict on real problems, but do not nitpick style-only issues unless they create maintenance or correctness risk.
           - You MAY run read-only verification commands (e.g. uv run pytest, uv run basedpyright) to validate your findings.
